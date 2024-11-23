@@ -18,7 +18,7 @@ app.use(morgan())
 app.use('/api', router)
 app.use('/api/file', express.static(path.join(`${process.cwd()}/uploads`)))
 app.use('*', (req, res) => {
-  if (req.params[0] != '/favicon.ico') {
+  if (req.params[0] !== '/favicon.ico') {
     return res.status(400).json({
       success: false,
       message: `Route not found by this route ${req.params[0]}`,
