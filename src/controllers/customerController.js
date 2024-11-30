@@ -6,11 +6,14 @@ const moment = require('moment')
 // Create a new customer
 exports.createCustomer = async (req, res) => {
   try {
-    const customer = new Customer(req.body)
+    const customer = new Customer({
+      ...req.body,
+      status: req.body.status || 'oddiy'
+    })
     await customer.save()
     res.status(201).json(customer)
   } catch (error) {
-    res.status(400).json({ message: error.message })
+    res.status(400).json({ message: "Ma'lumotlar noto'g'ri kiritilgan", error: error.message })
   }
 }
 
@@ -20,7 +23,7 @@ exports.getAllCustomers = async (req, res) => {
     const customers = await Customer.find()
     res.json(customers)
   } catch (error) {
-    res.status(500).json({ message: error.message })
+    res.status(500).json({ message: "Serverda xatolik yuz berdi", error: error.message })
   }
 }
 
@@ -29,10 +32,10 @@ exports.getCustomerById = async (req, res) => {
   try {
     const customer = await Customer.findById(req.params.id)
     if (!customer)
-      return res.status(404).json({ message: 'Customer not found' })
+      return res.status(404).json({ message: 'Mijoz topilmadi' })
     res.json(customer)
   } catch (error) {
-    res.status(500).json({ message: error.message })
+    res.status(500).json({ message: "Serverda xatolik yuz berdi", error: error.message })
   }
 }
 
@@ -43,10 +46,34 @@ exports.updateCustomer = async (req, res) => {
       new: true,
     })
     if (!customer)
-      return res.status(404).json({ message: 'Customer not found' })
+      return res.status(404).json({ message: 'Mijoz topilmadi' })
     res.json(customer)
   } catch (error) {
-    res.status(400).json({ message: error.message })
+    res.status(400).json({ message: "Ma'lumotlarni yangilashda xatolik", error: error.message })
+  }
+}
+
+// Update customer status
+exports.updateCustomerStatus = async (req, res) => {
+  try {
+    const { status } = req.body
+    if (!['VIP', 'oddiy', 'bad'].includes(status)) {
+      return res.status(400).json({ message: 'Noto\'g\'ri status kiritildi' })
+    }
+
+    const customer = await Customer.findByIdAndUpdate(
+      req.params.id,
+      { status },
+      { new: true }
+    )
+    
+    if (!customer) {
+      return res.status(404).json({ message: 'Mijoz topilmadi' })
+    }
+    
+    res.json(customer)
+  } catch (error) {
+    res.status(400).json({ message: "Statusni yangilashda xatolik", error: error.message })
   }
 }
 
@@ -55,10 +82,22 @@ exports.deleteCustomer = async (req, res) => {
   try {
     const customer = await Customer.findByIdAndDelete(req.params.id)
     if (!customer)
-      return res.status(404).json({ message: 'Customer not found' })
-    res.json({ message: 'Customer deleted successfully' })
+      return res.status(404).json({ message: 'Mijoz topilmadi' })
+    res.json({ message: 'Mijoz muvaffaqiyatli o\'chirildi' })
   } catch (error) {
-    res.status(500).json({ message: error.message })
+    res.status(500).json({ message: "Serverda xatolik yuz berdi", error: error.message })
+  }
+}
+
+// Get customers by status
+exports.getCustomersByStatus = async (req, res) => {
+  try {
+    const { status } = req.query
+    const query = status ? { status } : {}
+    const customers = await Customer.find(query)
+    res.json(customers)
+  } catch (error) {
+    res.status(500).json({ message: "Serverda xatolik yuz berdi", error: error.message })
   }
 }
 
@@ -97,7 +136,8 @@ exports.getTopCustomers = async (req, res) => {
           totalRentals: 1,
           totalSpent: 1,
           customerName: "$customerInfo.name",
-          customerPhone: "$customerInfo.phone"
+          customerPhone: "$customerInfo.phone",
+          customerStatus: "$customerInfo.status"
         }
       },
       { $sort: { totalRentals: -1 } },

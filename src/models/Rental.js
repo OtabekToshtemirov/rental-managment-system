@@ -7,8 +7,9 @@ const rentalSchema = new mongoose.Schema(
             ref: "Customer",
             required: true,
         },
-        carNumber: {
-            type: String,
+        car: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "Car"
         },
         borrowedProducts: [
             {
@@ -21,11 +22,11 @@ const rentalSchema = new mongoose.Schema(
         returnedProducts: [
             {
                 product: { type: mongoose.Schema.Types.ObjectId, ref: "Product", required: true },
-                quantity: { type: Number, required: true }, // Qaytarilgan miqdor
+                quantity: { type: Number, required: true },
                 returnDate: { type: Date, required: true },
                 cost: { 
                     type: Number,
-                    default: 0 // Set default value to 0
+                    default: 0 
                 },
             }
         ],
@@ -39,6 +40,7 @@ const rentalSchema = new mongoose.Schema(
             enum: ['active', 'completed', 'cancelled'],
             default: 'active',
         },
+        workStartDate: { type: Date, required: true, default: Date.now },
         startDate: { type: Date, required: true, default: Date.now },
         endDate: { type: Date, required: true, default: Date.now }
     },

@@ -1,6 +1,7 @@
 const Rental = require('../models/Rental');
 const Product = require('../models/Product');
 const Customer = require('../models/Customer');
+const Car = require('../models/Car');
 const moment = require('moment');
 const mongoose = require('mongoose');
 
@@ -8,65 +9,74 @@ const mongoose = require('mongoose');
 async function calculateRentalCost(productId, quantity, startDate, returnDate) {
     const product = await Product.findById(productId);
     if (!product || !product.dailyRate) {
-        throw new Error(`Invalid product or daily rate for product ID: ${productId}`);
+        throw new Error(`Mahsulot topilmadi yoki kunlik narxi belgilanmagan: ${productId}`);
     }
 
     if (!moment(startDate).isValid() || !moment(returnDate).isValid()) {
-        throw new Error('Invalid date format provided');
+        throw new Error('Sana formati noto\'g\'ri');
     }
 
     if (moment(returnDate).isBefore(moment(startDate))) {
-        throw new Error('Return date cannot be before start date');
+        throw new Error('Qaytarish sanasi boshlang\'ich sanadan oldin bo\'lishi mumkin emas');
     }
 
-    const days = Math.max(1, moment(returnDate).diff(moment(startDate), 'days') + 1);
+    const days = Math.max(1, moment(returnDate).diff(moment(startDate), 'days'));
+    const cost = product.dailyRate * days * quantity;
+    
     return {
-        cost: product.dailyRate * days * quantity,
+        cost,
         days,
         dailyRate: product.dailyRate
     };
 }
 
 // Helper function to calculate total rental summary
-async function calculateRentalSummary(borrowedProducts, startDate, endDate) {
+async function calculateRentalSummary(borrowedProducts, returnedProducts, startDate, endDate) {
     if (!Array.isArray(borrowedProducts) || borrowedProducts.length === 0) {
-        throw new Error('No borrowed products provided');
+        throw new Error('Ijaraga olingan mahsulotlar ro\'yxati bo\'sh');
     }
 
     if (!moment(startDate).isValid() || !moment(endDate).isValid()) {
-        throw new Error('Invalid date format provided');
+        throw new Error('Sana formati noto\'g\'ri');
     }
 
     let totalCost = 0;
-    const rentalDays = Math.max(1, moment(endDate).diff(moment(startDate), 'days') + 1);
     const productSummary = [];
 
-    for (const { product: productId, quantity } of borrowedProducts) {
-        try {
-            const { cost, dailyRate } = await calculateRentalCost(productId, quantity, startDate, endDate);
-            const product = await Product.findById(productId);
-            
-            if (!product) {
-                throw new Error(`Product not found: ${productId}`);
+    // Only calculate costs for returned products
+    if (returnedProducts && returnedProducts.length > 0) {
+        for (const { product: productId, quantity, returnDate } of returnedProducts) {
+            try {
+                const { cost, days, dailyRate } = await calculateRentalCost(
+                    productId,
+                    quantity,
+                    startDate,
+                    returnDate
+                );
+
+                const product = await Product.findById(productId);
+                if (!product) {
+                    throw new Error(`Mahsulot topilmadi: ${productId}`);
+                }
+
+                productSummary.push({
+                    product: product.name,
+                    quantity,
+                    dailyRate,
+                    subtotal: cost,
+                    days,
+                    returnDate
+                });
+
+                totalCost += cost;
+            } catch (error) {
+                throw new Error(`Mahsulot uchun narx hisoblashda xatolik: ${productId}: ${error.message}`);
             }
-            
-            productSummary.push({
-                product: product.name,
-                quantity,
-                dailyRate,
-                subtotal: cost,
-                rentalDays
-            });
-            
-            totalCost += cost;
-        } catch (error) {
-            throw new Error(`Error calculating cost for product ${productId}: ${error.message}`);
         }
     }
 
     return {
         totalCost,
-        rentalDays,
         productSummary,
         startDate: moment(startDate).toDate(),
         endDate: moment(endDate).toDate()
@@ -75,28 +85,39 @@ async function calculateRentalSummary(borrowedProducts, startDate, endDate) {
 
 exports.createRental = async (req, res) => {
     try {
-        const { customer, borrowedProducts, startDate, endDate, carNumber, status } = req.body;
+        const { customer, borrowedProducts, startDate, endDate, car, status } = req.body;
 
         // Validate dates
         if (moment(endDate).isBefore(moment(startDate))) {
-            return res.status(400).json({ message: "End date must not be earlier than the start date." });
+            return res.status(400).json({ message: "Tugash sanasi boshlang'ich sanadan oldin bo'lishi mumkin emas" });
         }
 
         // Validate customer
         const customerDetails = await Customer.findById(customer);
         if (!customerDetails) {
-            return res.status(404).json({ message: `Customer with ID ${customer} not found.` });
+            return res.status(404).json({ message: `${customer} ID raqamli mijoz topilmadi` });
+        }
+
+        // Validate car if provided
+        if (car) {
+            const carDetails = await Car.findById(car);
+            if (!carDetails) {
+                return res.status(404).json({ message: `${car} ID raqamli mashina topilmadi` });
+            }
+            // Increment rental count for the car
+            carDetails.rentalCount += 1;
+            await carDetails.save();
         }
 
         // Validate and update product stocks
         for (const { product, quantity } of borrowedProducts) {
             const productDetails = await Product.findById(product);
             if (!productDetails) {
-                return res.status(404).json({ message: `Product with ID ${product} not found.` });
+                return res.status(404).json({ message: `${product} ID raqamli mahsulot topilmadi` });
             }
             if (productDetails.quantity < quantity) {
                 return res.status(400).json({
-                    message: `Insufficient stock for product: ${productDetails.name}. Available: ${productDetails.quantity}.`,
+                    message: `${productDetails.name} mahsuloti uchun yetarli miqdor mavjud emas. Mavjud: ${productDetails.quantity}`,
                 });
             }
 
@@ -113,7 +134,7 @@ exports.createRental = async (req, res) => {
         
         if (status === 'completed') {
             try {
-                rentalSummary = await calculateRentalSummary(borrowedProducts, startDate, endDate);
+                rentalSummary = await calculateRentalSummary(borrowedProducts, [], startDate, endDate);
                 totalCost = rentalSummary.totalCost;
                 
                 // Update customer balance
@@ -132,7 +153,7 @@ exports.createRental = async (req, res) => {
             startDate,
             endDate,
             totalCost,
-            carNumber,
+            car,
             status: status || 'active'
         });
 
@@ -140,7 +161,7 @@ exports.createRental = async (req, res) => {
         
         const response = {
             rental,
-            message: 'Rental created successfully.'
+            message: 'Ijara muvaffaqiyatli yaratildi'
         };
 
         if (rentalSummary) {
@@ -149,7 +170,7 @@ exports.createRental = async (req, res) => {
 
         res.status(201).json(response);
     } catch (error) {
-        res.status(500).json({ message: "Internal server error", error: error.message });
+        res.status(500).json({ message: "Serverda xatolik yuz berdi", error: error.message });
     }
 };
 
@@ -160,7 +181,7 @@ exports.addBorrowedProduct = async (req, res) => {
         // Validate input
         if (!rentalId || !product || !quantity) {
             return res.status(400).json({
-                message: 'Required fields missing: rentalId, product, and quantity are required'
+                message: 'Ijaraga olingan mahsulot uchun zaruriy ma\'lumotlar yetarli emas'
             });
         }
 
@@ -171,24 +192,24 @@ exports.addBorrowedProduct = async (req, res) => {
             .populate('returnedProducts.product', 'name dailyRate');
 
         if (!rental) {
-            return res.status(404).json({ message: 'Rental not found.' });
+            return res.status(404).json({ message: 'Ijara topilmadi' });
         }
 
         // Check rental status
         if (rental.status !== 'active') {
             return res.status(400).json({
-                message: `Cannot add products to ${rental.status} rental`
+                message: `Ijara holati ${rental.status} bo'lgani uchun mahsulot qo'shib bo'lmaydi`
             });
         }
 
         const productDetails = await Product.findById(product);
         if (!productDetails) {
-            return res.status(404).json({ message: `Product with ID ${product} not found.` });
+            return res.status(404).json({ message: `${product} ID raqamli mahsulot topilmadi` });
         }
 
         if (productDetails.quantity < quantity) {
             return res.status(400).json({
-                message: `Insufficient stock for product: ${productDetails.name}. Available: ${productDetails.quantity}.`,
+                message: `${productDetails.name} mahsuloti uchun yetarli miqdor mavjud emas. Mavjud: ${productDetails.quantity}`,
             });
         }
 
@@ -216,7 +237,7 @@ exports.addBorrowedProduct = async (req, res) => {
             .populate('returnedProducts.product', 'name dailyRate');
 
         res.status(200).json({
-            message: 'Product added to borrowed list successfully',
+            message: 'Mahsulot muvaffaqiyatli qo\'shildi',
             rental: updatedRental,
             addedProduct: {
                 product: productDetails,
@@ -228,7 +249,7 @@ exports.addBorrowedProduct = async (req, res) => {
     } catch (error) {
         console.error('Error in addBorrowedProduct:', error);
         res.status(500).json({ 
-            message: "Error adding borrowed product", 
+            message: "Mahsulot qo'shishda xatolik yuz berdi", 
             error: error.message
         });
     }
@@ -236,54 +257,70 @@ exports.addBorrowedProduct = async (req, res) => {
 
 exports.addReturnedProduct = async (req, res) => {
     try {
-        const { rentalId, product, quantity, startDate, returnDate } = req.body;
+        const { rentalId, product, quantity, returnDate } = req.body;
 
-        const rental = await Rental.findById(rentalId)
-            .populate('borrowedProducts.product', 'name dailyRate');
-            
-        if (!rental) {
-            return res.status(404).json({ message: 'Rental not found.' });
-        }
-
-        // Check if the product exists in borrowedProducts
-        const borrowed = rental.borrowedProducts.find(item => 
-            item.product && item.product._id && item.product._id.toString() === product
-        );
-        
-        if (!borrowed) {
-            return res.status(400).json({ message: 'Product not found in borrowed items.' });
-        }
-
-        // Calculate remaining quantity
-        const alreadyReturned = rental.returnedProducts
-            .filter(item => item.product.toString() === product)
-            .reduce((sum, item) => sum + item.quantity, 0);
-        
-        const remainingQuantity = borrowed.quantity - alreadyReturned;
-
-        if (quantity > remainingQuantity) {
-            return res.status(400).json({ 
-                message: `Cannot return ${quantity} items. Only ${remainingQuantity} remaining.` 
+        // Validate input
+        if (!rentalId || !product || !quantity || !returnDate) {
+            return res.status(400).json({
+                message: 'Qaytarilgan mahsulot uchun zaruriy ma\'lumotlar yetarli emas'
             });
         }
 
-        const actualReturnDate = returnDate ? new Date(returnDate) : new Date();
-        const rentalStartDate = borrowed.startDate || rental.startDate;
+        // Find and populate rental
+        const rental = await Rental.findById(rentalId)
+            .populate('customer', 'name phone')
+            .populate('borrowedProducts.product', 'name dailyRate')
+            .populate('returnedProducts.product', 'name dailyRate');
 
-        // Calculate rental duration in days
-        const durationInMs = actualReturnDate - rentalStartDate;
-        const durationInDays = Math.max(1, Math.ceil(durationInMs / (1000 * 60 * 60 * 24)));
-        
-        // Calculate cost for this return
-        const dailyRate = borrowed.product.dailyRate || 0;
-        const cost = quantity * dailyRate * durationInDays;
+        if (!rental) {
+            return res.status(404).json({ message: 'Ijara topilmadi' });
+        }
 
-        // Create the return record
-        const returnRecord = { 
-            product, 
-            quantity, 
+        // Check rental status
+        if (rental.status === 'completed' || rental.status === 'cancelled') {
+            return res.status(400).json({
+                message: `Ijara holati ${rental.status} bo'lgani uchun mahsulot qaytarib bo'lmaydi`
+            });
+        }
+
+        // Find the borrowed product
+        const borrowed = rental.borrowedProducts.find(
+            item => item.product._id.toString() === product
+        );
+
+        if (!borrowed) {
+            return res.status(404).json({ message: 'Bu mahsulot ijaraga olinmagan' });
+        }
+
+        // Calculate total returned quantity for this product
+        const totalReturned = rental.returnedProducts
+            .filter(item => item.product.toString() === product)
+            .reduce((sum, item) => sum + item.quantity, 0);
+
+        const remainingQuantity = borrowed.quantity - totalReturned;
+
+        if (remainingQuantity < quantity) {
+            return res.status(400).json({
+                message: `Qaytarilayotgan miqdor xato. Qaytarish mumkin bo'lgan miqdor: ${remainingQuantity}`
+            });
+        }
+
+        const actualReturnDate = moment(returnDate).toDate();
+
+        // Calculate cost for returned product
+        const { cost } = await calculateRentalCost(
+            product,
+            quantity,
+            rental.startDate,
+            actualReturnDate
+        );
+
+        // Create return record
+        const returnRecord = {
+            product,
+            quantity,
             returnDate: actualReturnDate,
-            cost // This is now optional with a default value of 0
+            cost
         };
 
         // Add to returned products
@@ -320,48 +357,28 @@ exports.addReturnedProduct = async (req, res) => {
         // Save updated rental
         await rental.save();
 
-        // Get return history for this product
-        const returnHistory = rental.returnedProducts
-            .filter(item => item.product.toString() === product)
-            .map(item => ({
-                quantity: item.quantity,
-                returnDate: item.returnDate,
-                cost: item.cost || 0
-            }));
-
-        // Calculate total returned quantity and cost for this product
-        const totalReturnedForProduct = returnHistory.reduce((acc, item) => ({
-            quantity: acc.quantity + item.quantity,
-            cost: (acc.cost || 0) + (item.cost || 0)
-        }), { quantity: 0, cost: 0 });
-
-        res.status(200).json({ 
-            message: 'Product returned successfully.', 
+        res.status(200).json({
+            message: 'Mahsulot muvaffaqiyatli qaytarildi',
             rental,
-            currentReturn: {
+            returnedProduct: {
+                product: productDetails,
                 quantity,
                 returnDate: actualReturnDate,
-                cost: cost || 0
-            },
-            productSummary: {
-                productName: borrowed.product.name,
-                totalReturned: totalReturnedForProduct.quantity,
-                totalCost: totalReturnedForProduct.cost || 0,
-                remainingQuantity: remainingQuantity - quantity,
-                dailyRate: dailyRate,
-                durationInDays
-            },
-            returnHistory
+                cost
+            }
         });
     } catch (error) {
         console.error('Error in addReturnedProduct:', error);
-        res.status(500).json({ message: "Internal server error", error: error.message });
+        res.status(500).json({
+            message: "Mahsulot qaytarishda xatolik yuz berdi",
+            error: error.message
+        });
     }
 };
 
 exports.updateRental = async (req, res) => {
     try {
-        const { customer, borrowedProducts, carNumber, status, startDate, endDate } = req.body;
+        const { customer, borrowedProducts, car, status, startDate, endDate } = req.body;
         const rentalId = req.params.id;
 
         // Find the rental and populate necessary fields
@@ -369,19 +386,19 @@ exports.updateRental = async (req, res) => {
             .populate('borrowedProducts.product', 'name dailyRate');
 
         if (!rental) {
-            return res.status(404).json({ message: 'Rental not found.' });
+            return res.status(404).json({ message: 'Ijara topilmadi' });
         }
 
         // Validate if rental can be updated
         if ((rental.status === 'completed' || rental.status === 'cancelled') && 
             !req.body.status) { // Allow status updates even for completed/cancelled rentals
             return res.status(400).json({ 
-                message: `Cannot update rental with status: ${rental.status}` 
+                message: `Ijara holati ${rental.status} bo'lgani uchun yangilash mumkin emas` 
             });
         }
 
         // Update simple fields if provided
-        if (carNumber) rental.carNumber = carNumber;
+        if (car) rental.car = car;
         if (status) rental.status = status;
         if (customer) rental.customer = customer;
 
@@ -392,7 +409,7 @@ exports.updateRental = async (req, res) => {
 
             if (endMoment.isBefore(startMoment)) {
                 return res.status(400).json({ 
-                    message: "End date must not be earlier than start date." 
+                    message: "Tugash sanasi boshlang'ich sanadan oldin bo'lishi mumkin emas" 
                 });
             }
 
@@ -412,14 +429,14 @@ exports.updateRental = async (req, res) => {
             for (const item of borrowedProducts) {
                 if (!item.product || !item.quantity) {
                     return res.status(400).json({
-                        message: "Each borrowed product must have product ID and quantity"
+                        message: "Ijaraga olingan har bir mahsulot uchun mahsulot ID va miqdor zarur"
                     });
                 }
 
                 const product = await Product.findById(item.product);
                 if (!product) {
                     return res.status(400).json({
-                        message: `Product not found: ${item.product}`
+                        message: `${item.product} ID raqamli mahsulot topilmadi`
                     });
                 }
             }
@@ -444,7 +461,7 @@ exports.updateRental = async (req, res) => {
         await rental.save();
 
         res.status(200).json({
-            message: 'Rental updated successfully',
+            message: 'Ijara muvaffaqiyatli yangilandi',
             rental: await Rental.findById(rental._id)
                 .populate('customer', 'name phone')
                 .populate('borrowedProducts.product', 'name dailyRate')
@@ -452,7 +469,7 @@ exports.updateRental = async (req, res) => {
 
     } catch (error) {
         console.error('Error in updateRental:', error);
-        res.status(500).json({ message: "Internal server error", error: error.message });
+        res.status(500).json({ message: "Serverda xatolik yuz berdi", error: error.message });
     }
 };
 
@@ -464,7 +481,7 @@ exports.getAllRentals = async (req, res) => {
             .populate('returnedProducts.product', 'name dailyRate');
         res.json(rentals);
     } catch (error) {
-        res.status(500).json({ message: "Internal server error", error: error.message });
+        res.status(500).json({ message: "Serverda xatolik yuz berdi", error: error.message });
     }
 };
 
@@ -475,11 +492,11 @@ exports.getRentalById = async (req, res) => {
             .populate('borrowedProducts.product', 'name dailyRate')
             .populate('returnedProducts.product', 'name dailyRate');
         if (!rental) {
-            return res.status(404).json({ message: 'Rental not found.' });
+            return res.status(404).json({ message: 'Ijara topilmadi' });
         }
         res.json(rental);
     } catch (error) {
-        res.status(500).json({ message: "Internal server error", error: error.message });
+        res.status(500).json({ message: "Serverda xatolik yuz berdi", error: error.message });
     }
 };
 
@@ -487,11 +504,11 @@ exports.deleteRental = async (req, res) => {
     try {
         const rental = await Rental.findByIdAndDelete(req.params.id);
         if (!rental) {
-            return res.status(404).json({ message: 'Rental not found.' });
+            return res.status(404).json({ message: 'Ijara topilmadi' });
         }
-        res.json({ message: 'Rental deleted successfully.' });
+        res.json({ message: 'Ijara muvaffaqiyatli o\'chirildi' });
     } catch (error) {
-        res.status(500).json({ message: "Internal server error", error: error.message });
+        res.status(500).json({ message: "Serverda xatolik yuz berdi", error: error.message });
     }
 };
 
@@ -503,7 +520,7 @@ exports.getRentalsByCustomerId = async (req, res) => {
             .populate('returnedProducts.product', 'name dailyRate');
         res.json(rentals);
     } catch (error) {
-        res.status(500).json({ message: "Internal server error", error: error.message });
+        res.status(500).json({ message: "Serverda xatolik yuz berdi", error: error.message });
     }
 };
 
@@ -520,7 +537,7 @@ exports.getRentalsByProductId = async (req, res) => {
             .populate('returnedProducts.product', 'name dailyRate');
         res.json(rentals);
     } catch (error) {
-        res.status(500).json({ message: "Internal server error", error: error.message });
+        res.status(500).json({ message: "Serverda xatolik yuz berdi", error: error.message });
     }
 };
 
@@ -533,7 +550,7 @@ exports.getActiveRentals = async (req, res) => {
             .populate('returnedProducts.product', 'name dailyRate');
         res.json(rentals);
     } catch (error) {
-        res.status(500).json({ message: "Internal server error", error: error.message });
+        res.status(500).json({ message: "Serverda xatolik yuz berdi", error: error.message });
     }
 };
 
@@ -546,6 +563,6 @@ exports.getCompletedRentals = async (req, res) => {
             .populate('returnedProducts.product', 'name dailyRate');
         res.json(rentals);
     } catch (error) {
-        res.status(500).json({ message: "Internal server error", error: error.message });
+        res.status(500).json({ message: "Serverda xatolik yuz berdi", error: error.message });
     }
 };

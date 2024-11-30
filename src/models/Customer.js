@@ -13,6 +13,11 @@ const customerSchema = new mongoose.Schema(
         address: {
             type: String,
         },
+        status: {
+            type: String,
+            enum: ['VIP', 'oddiy', 'bad'],
+            default: 'oddiy'
+        },
         balance: {
             type: Number,
             required: true,
