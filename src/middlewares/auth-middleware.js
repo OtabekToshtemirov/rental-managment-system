@@ -1,5 +1,5 @@
-const jwt = require('../services/jwt-services')
-const Employees = require('../models/Employees')
+const jwt = require('../services/jwt')
+const Customers = require('../models/Customer')
 const BaseError = require('../utils/error')
 
 const authMiddleware = async (req, res, next) => {
@@ -22,14 +22,13 @@ const authMiddleware = async (req, res, next) => {
       throw new BaseError('Unauthorized', 401)
     }
 
-    const data = await Employees.findOne({ _id: decodedData.id })
+    const customer = await Customers.findById(decodedData.id)
 
-    if (!data) {
-      throw new BaseError('Employee not found', 404)
+    if (!customer) {
+      throw new BaseError('Unauthorized', 401)
     }
 
-    req.user = data
-
+    req.customer = customer
     next()
   } catch (error) {
     next(error)

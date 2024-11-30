@@ -2,6 +2,7 @@ const express = require('express')
 const router = express.Router()
 const customerController = require('../controllers/customerController')
 
+// Basic CRUD operations
 router.post('/', customerController.createCustomer)
 router.get('/', customerController.getAllCustomers)
 router.get('/:id', customerController.getCustomerById)

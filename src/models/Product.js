@@ -19,12 +19,18 @@ const productSchema = new mongoose.Schema(
             enum: ['single', 'combo'],
             required: true,
         },
-        parts: {
-            type: [String],
-            required: function () {
-                return this.type === 'combo'
-            },
-        },
+        parts: [
+            {
+                product: {
+                    type: String,
+                    required: true,
+                },
+                quantity: {
+                    type: Number,
+                    required: true,
+                }
+            }
+        ],
         quantity: {
             type: Number,
             default: 1,
@@ -34,7 +40,7 @@ const productSchema = new mongoose.Schema(
             default: 0,
         }
     },
-    { timestamps: true }
+    {timestamps: true}
 )
 
 module.exports = mongoose.model('Product', productSchema)
