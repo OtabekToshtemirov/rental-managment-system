@@ -55,9 +55,28 @@ exports.updateProduct = async (req, res) => {
 // Delete a product by ID
 exports.deleteProduct = async (req, res) => {
   try {
-    const product = await Product.findByIdAndDelete(req.params.id)
-    if (!product) return res.status(404).json({ message: 'Product not found' })
-    res.json({ message: 'Product deleted successfully' })
+    const product = await Product.findById(req.params.id)
+    if (!product) {
+      return res.status(404).json({
+        success: false,
+        message: 'Mahsulot topilmadi'
+      })
+    }
+
+    const activeRentals = await Rental.find({
+      'products.product': product._id,
+      status: 'active'
+    })
+
+    if (activeRentals.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot delete product with active rentals'
+      })
+    }
+
+    await product.deleteOne()
+    res.status(204).send()
   } catch (error) {
     res.status(500).json({ message: error.message })
   }

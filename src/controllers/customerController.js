@@ -31,8 +31,9 @@ exports.getAllCustomers = async (req, res) => {
 exports.getCustomerById = async (req, res) => {
   try {
     const customer = await Customer.findById(req.params.id)
-    if (!customer)
+    if (!customer) {
       return res.status(404).json({ message: 'Mijoz topilmadi' })
+    }
     res.json(customer)
   } catch (error) {
     res.status(500).json({ message: "Serverda xatolik yuz berdi", error: error.message })
@@ -42,47 +43,38 @@ exports.getCustomerById = async (req, res) => {
 // Update a customer by ID
 exports.updateCustomer = async (req, res) => {
   try {
-    const customer = await Customer.findByIdAndUpdate(req.params.id, req.body, {
-      new: true,
-    })
-    if (!customer)
-      return res.status(404).json({ message: 'Mijoz topilmadi' })
+    const updateData = { ...req.body };
+    
+    // Status validation if it's being updated
+    if (updateData.status) {
+      if (!['VIP', 'oddiy', 'bad'].includes(updateData.status)) {
+        return res.status(400).json({ message: 'Noto\'g\'ri status kiritildi' });
+      }
+    }
+
+    const customer = await Customer.findByIdAndUpdate(
+      req.params.id, 
+      updateData,
+      { new: true }
+    )
+    
+    if (!customer) {
+      return res.status(404).json({ message: 'Mijoz topilmadi' });
+    }
+    
     res.json(customer)
   } catch (error) {
     res.status(400).json({ message: "Ma'lumotlarni yangilashda xatolik", error: error.message })
   }
 }
 
-// Update customer status
-exports.updateCustomerStatus = async (req, res) => {
-  try {
-    const { status } = req.body
-    if (!['VIP', 'oddiy', 'bad'].includes(status)) {
-      return res.status(400).json({ message: 'Noto\'g\'ri status kiritildi' })
-    }
-
-    const customer = await Customer.findByIdAndUpdate(
-      req.params.id,
-      { status },
-      { new: true }
-    )
-    
-    if (!customer) {
-      return res.status(404).json({ message: 'Mijoz topilmadi' })
-    }
-    
-    res.json(customer)
-  } catch (error) {
-    res.status(400).json({ message: "Statusni yangilashda xatolik", error: error.message })
-  }
-}
-
 // Delete a customer by ID
 exports.deleteCustomer = async (req, res) => {
   try {
-    const customer = await Customer.findByIdAndDelete(req.params.id)
-    if (!customer)
-      return res.status(404).json({ message: 'Mijoz topilmadi' })
+    const customer = await Customer.findByIdAndDelete(req.params.id);
+    if (!customer) {
+      return res.status(404).json({ message: 'Mijoz topilmadi' });
+    }
     res.json({ message: 'Mijoz muvaffaqiyatli o\'chirildi' })
   } catch (error) {
     res.status(500).json({ message: "Serverda xatolik yuz berdi", error: error.message })

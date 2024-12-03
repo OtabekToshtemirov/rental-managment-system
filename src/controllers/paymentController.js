@@ -5,23 +5,25 @@ const moment = require('moment')
 // Create a new payment
 exports.createPayment = async (req, res) => {
   try {
-    const payment = new Payments(req.body)
-    // summani mijozning hisob raqamiga qo'shamiz
-    const customer = await Customers.findById(payment.customer)
-    if (!customer)
-      return res.status(404).json({ message: 'Customer not found' })
-    customer.balance += payment.amount
-
-    await payment.save()
-    await customer.save()
-    res.status(201).json(payment)
+    const payment = new Payments(req.body);
+    const customer = await Customers.findById(payment.customer);
+    
+    if (!customer) {
+      return res.status(404).json({ message: 'Customer not found' });
+    }
+    
+    customer.balance += payment.amount;
+    
+    await payment.save();
+    await customer.save();
+    
+    res.status(201).json(payment);
   } catch (error) {
-    res.status(400).json({ message: error.message })
+    res.status(400).json({ message: error.message });
   }
 }
 
 // Get all payments
-
 exports.getAllPayments = async (req, res) => {
   try {
     const payments = await Payments.find()
@@ -32,12 +34,12 @@ exports.getAllPayments = async (req, res) => {
 }
 
 // Get a payment by ID
-
 exports.getPaymentById = async (req, res) => {
   try {
     const payment = await Payments.findById(req.params.id)
-    if (!payment)
+    if (!payment) {
       return res.status(404).json({ message: 'Payment not found' })
+    }
     res.json(payment)
   } catch (error) {
     res.status(500).json({ message: error.message })
@@ -45,34 +47,66 @@ exports.getPaymentById = async (req, res) => {
 }
 
 // Update a payment by ID
-
 exports.updatePayment = async (req, res) => {
   try {
-    const payment = await Payments.findByIdAndUpdate(req.params.id, req.body)
-    if (!payment)
-      return res.status(404).json({ message: 'Payment not found' })
-    res.json(payment)
-
+    // First get the old payment to update customer balance
+    const oldPayment = await Payments.findById(req.params.id);
+    if (!oldPayment) {
+      return res.status(404).json({ message: 'Payment not found' });
+    }
+    
+    // Get customer and update balance
+    const customer = await Customers.findById(oldPayment.customer);
+    if (!customer) {
+      return res.status(404).json({ message: 'Customer not found' });
+    }
+    
+    // Adjust customer balance
+    customer.balance -= oldPayment.amount; // Remove old amount
+    customer.balance += req.body.amount; // Add new amount
+    
+    // Update payment
+    const payment = await Payments.findByIdAndUpdate(
+      req.params.id, 
+      req.body,
+      { new: true }
+    );
+    
+    await customer.save();
+    
+    res.json(payment);
   } catch (error) {
-    res.status(400).json({ message: error.message })
+    res.status(400).json({ message: error.message });
   }
 }
 
 // Delete a payment by ID
-
 exports.deletePayment = async (req, res) => {
   try {
-    const payment = await Payments.findByIdAndDelete(req.params.id)
-    if (!payment)
-      return res.status(404).json({ message: 'Payment not found' })
-    res.json({ message: 'Payment deleted successfully' })
+    const payment = await Payments.findById(req.params.id);
+    if (!payment) {
+      return res.status(404).json({ message: 'Payment not found' });
+    }
+    
+    // Get customer and update balance
+    const customer = await Customers.findById(payment.customer);
+    if (!customer) {
+      return res.status(404).json({ message: 'Customer not found' });
+    }
+    
+    // Adjust customer balance
+    customer.balance -= payment.amount;
+    
+    await Payments.findByIdAndDelete(req.params.id);
+    await customer.save();
+    
+    res.json({ message: 'Payment deleted successfully' });
   } catch (error) {
-    res.status(500).json({ message: error.message })
+    res.status(500).json({ message: error.message });
   }
 }
 
 // Get all payments by customer ID
-
 exports.getPaymentsByCustomerId = async (req, res) => {
   try {
     const payments = await Payments.find({ customer: req.params.id })

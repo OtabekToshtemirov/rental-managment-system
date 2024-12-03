@@ -9,8 +9,7 @@ router.get('/:id', customerController.getCustomerById)
 router.put('/:id', customerController.updateCustomer)
 router.delete('/:id', customerController.deleteCustomer)
 
-// Status-related routes
-router.put('/:id/status', customerController.updateCustomerStatus)
+// Filter routes
 router.get('/filter/status', customerController.getCustomersByStatus)
 
 module.exports = router

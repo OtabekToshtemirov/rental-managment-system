@@ -1,21 +1,15 @@
 const Rental = require('../models/Rental');
 const Customer = require('../models/Customer');
-const Product = require('../models/Product');
+const Car = require('../models/Car');
 const Payment = require('../models/Payments');
 const moment = require('moment');
 
-// Constants for date formats and limits
-const DATE_FORMAT = 'YYYY-MM-DD';
-const DEFAULT_TOP_LIMIT = 5;
-const CACHE_TTL = 300; // 5 minutes in seconds
-
-// Response handler with status codes
+// Helper function for sending responses
 const sendResponse = (res, data = null, error = null, status = 200) => {
     if (error) {
-        console.error('Statistics Error:', error);
         return res.status(status).json({
             success: false,
-            error: error.message || 'Internal server error'
+            message: error.message || 'Internal server error'
         });
     }
     return res.status(status).json({
@@ -24,393 +18,217 @@ const sendResponse = (res, data = null, error = null, status = 200) => {
     });
 };
 
-// Date range validator and parser
-const parseDateRange = (query = {}) => {
+// Get daily revenue statistics
+const getDailyRevenue = async (req, res) => {
     try {
-        const now = moment();
-        let startDate, endDate;
+        const date = req.query.date ? moment(req.query.date).startOf('day') : moment().startOf('day');
+        const endDate = moment(date).endOf('day');
 
-        // Handle empty or invalid dates by using defaults
-        if (!query.startDate || !moment(query.startDate, DATE_FORMAT).isValid()) {
-            startDate = now.clone().startOf('month');
-        } else {
-            startDate = moment(query.startDate, DATE_FORMAT);
-        }
-
-        if (!query.endDate || !moment(query.endDate, DATE_FORMAT).isValid()) {
-            endDate = now.clone().endOf('day');
-        } else {
-            endDate = moment(query.endDate, DATE_FORMAT).endOf('day');
-        }
-
-        // Ensure end date is not before start date
-        if (endDate.isBefore(startDate)) {
-            endDate = startDate.clone().endOf('day');
-        }
-
-        return {
-            startDate: startDate.toDate(),
-            endDate: endDate.toDate()
-        };
-    } catch (error) {
-        // Return default date range on error
-        const now = moment();
-        return {
-            startDate: now.clone().startOf('month').toDate(),
-            endDate: now.clone().endOf('day').toDate()
-        };
-    }
-};
-
-// Overview Statistics
-exports.getOverviewStats = async (req, res) => {
-    try {
-        const now = moment();
-        const periods = {
-            today: { 
-                start: now.clone().startOf('day'), 
-                end: now.clone().endOf('day') 
-            },
-            yesterday: { 
-                start: now.clone().subtract(1, 'day').startOf('day'),
-                end: now.clone().subtract(1, 'day').endOf('day')
-            },
-            thisWeek: { 
-                start: now.clone().startOf('week'), 
-                end: now.clone().endOf('day') 
-            },
-            thisMonth: { 
-                start: now.clone().startOf('month'), 
-                end: now.clone().endOf('day') 
-            },
-            thisYear: { 
-                start: now.clone().startOf('year'), 
-                end: now.clone().endOf('day') 
-            }
-        };
-
-        const [revenue, rentals, customers] = await Promise.all([
-            // Revenue statistics
-            Payment.aggregate([
-                {
-                    $facet: Object.entries(periods).reduce((acc, [key, { start, end }]) => ({
-                        ...acc,
-                        [key]: [
-                            { 
-                                $match: { 
-                                    createdAt: { 
-                                        $gte: start.toDate(), 
-                                        $lte: end.toDate() 
-                                    } 
-                                } 
-                            },
-                            { 
-                                $group: { 
-                                    _id: null, 
-                                    total: { $sum: '$amount' } 
-                                } 
-                            }
-                        ]
-                    }), {})
-                }
-            ]),
-            // Rental statistics
-            Rental.aggregate([
-                {
-                    $facet: Object.entries(periods).reduce((acc, [key, { start, end }]) => ({
-                        ...acc,
-                        [key]: [
-                            { 
-                                $match: { 
-                                    createdAt: { 
-                                        $gte: start.toDate(), 
-                                        $lte: end.toDate() 
-                                    } 
-                                } 
-                            },
-                            { 
-                                $group: { 
-                                    _id: null, 
-                                    count: { $sum: 1 } 
-                                } 
-                            }
-                        ]
-                    }), {})
-                }
-            ]),
-            // Active customers count
-            Customer.countDocuments({ active: true })
-        ]);
-
-        const overview = {
-            revenue: Object.entries(periods).reduce((acc, [key]) => ({
-                ...acc,
-                [key]: revenue[0]?.[key]?.[0]?.total || 0
-            }), {}),
-            rentals: Object.entries(periods).reduce((acc, [key]) => ({
-                ...acc,
-                [key]: rentals[0]?.[key]?.[0]?.count || 0
-            }), {}),
-            activeCustomers: customers || 0
-        };
-
-        sendResponse(res, overview);
-    } catch (error) {
-        sendResponse(res, null, error, 500);
-    }
-};
-
-// Revenue Statistics with dynamic time grouping
-const getRevenueStats = async (groupBy, dateRange) => {
-    const groupings = {
-        daily: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } },
-        weekly: { $week: '$createdAt' },
-        monthly: {
-            year: { $year: '$createdAt' },
-            month: { $month: '$createdAt' }
-        },
-        yearly: { $year: '$createdAt' }
-    };
-
-    const matchStage = {
-        $match: {
-            createdAt: { $gte: dateRange.startDate, $lte: dateRange.endDate }
-        }
-    };
-
-    const groupStage = {
-        $group: {
-            _id: groupings[groupBy],
-            revenue: { $sum: '$amount' },
-            count: { $sum: 1 },
-            avgTransaction: { $avg: '$amount' }
-        }
-    };
-
-    return Payment.aggregate([
-        matchStage,
-        groupStage,
-        { $sort: { '_id': 1 } }
-    ]);
-};
-
-// Generate time-based revenue endpoints
-['Daily', 'Weekly', 'Monthly', 'Yearly'].forEach(period => {
-    exports[`get${period}Revenue`] = async (req, res) => {
-        try {
-            const dateRange = parseDateRange(req.query);
-            const stats = await getRevenueStats(period.toLowerCase(), dateRange);
-            sendResponse(res, stats);
-        } catch (error) {
-            sendResponse(res, null, error, 500);
-        }
-    };
-});
-
-// Top Customers Statistics
-exports.getTopCustomers = async (req, res) => {
-    try {
-        const limit = Math.min(parseInt(req.query.limit) || DEFAULT_TOP_LIMIT, 50);
-        const dateRange = parseDateRange(req.query);
-
-        const stats = await Customer.aggregate([
-            {
-                $lookup: {
-                    from: 'payments',
-                    let: { customerId: '$_id' },
-                    pipeline: [
-                        {
-                            $match: {
-                                $expr: {
-                                    $and: [
-                                        { $eq: ['$customer', '$$customerId'] },
-                                        { $gte: ['$createdAt', dateRange.startDate] },
-                                        { $lte: ['$createdAt', dateRange.endDate] }
-                                    ]
-                                }
-                            }
-                        }
-                    ],
-                    as: 'payments'
-                }
-            },
-            {
-                $project: {
-                    name: 1,
-                    phone: 1,
-                    email: 1,
-                    address: 1,
-                    balance: 1,
-                    totalSpent: { $sum: '$payments.amount' },
-                    averageTransaction: { $avg: '$payments.amount' },
-                    transactionCount: { $size: '$payments' },
-                    lastTransaction: { $max: '$payments.createdAt' }
-                }
-            },
-            { $match: { totalSpent: { $gt: 0 } } },
-            { $sort: { totalSpent: -1 } },
-            { $limit: limit }
-        ]);
-
-        sendResponse(res, stats);
-    } catch (error) {
-        sendResponse(res, null, error, 500);
-    }
-};
-
-// Customer History
-exports.getCustomerHistory = async (req, res) => {
-    try {
-        const { id } = req.params;
-        const dateRange = parseDateRange(req.query);
-
-        const history = await Payment.aggregate([
+        const dailyStats = await Payment.aggregate([
             {
                 $match: {
-                    customer: id,
-                    createdAt: { $gte: dateRange.startDate, $lte: dateRange.endDate }
+                    createdAt: { $gte: date.toDate(), $lte: endDate.toDate() }
                 }
             },
-            {
-                $lookup: {
-                    from: 'rentals',
-                    localField: 'rental',
-                    foreignField: '_id',
-                    as: 'rentalDetails'
-                }
-            },
-            {
-                $unwind: '$rentalDetails'
-            },
-            {
-                $project: {
-                    date: '$createdAt',
-                    amount: 1,
-                    rentalId: '$rental',
-                    products: '$rentalDetails.products',
-                    status: '$rentalDetails.status'
-                }
-            },
-            { $sort: { date: -1 } }
-        ]);
-
-        sendResponse(res, history);
-    } catch (error) {
-        sendResponse(res, null, error, 500);
-    }
-};
-
-// Most Rented Products
-exports.getMostRentedProducts = async (req, res) => {
-    try {
-        const limit = Math.min(parseInt(req.query.limit) || DEFAULT_TOP_LIMIT, 50);
-        const dateRange = parseDateRange(req.query);
-
-        const stats = await Rental.aggregate([
-            {
-                $match: {
-                    createdAt: { $gte: dateRange.startDate, $lte: dateRange.endDate }
-                }
-            },
-            { $unwind: '$products' },
-            {
-                $lookup: {
-                    from: 'products',
-                    localField: 'products.product',
-                    foreignField: '_id',
-                    as: 'productDetails'
-                }
-            },
-            { $unwind: '$productDetails' },
             {
                 $group: {
-                    _id: '$products.product',
-                    productName: { $first: '$productDetails.name' },
-                    category: { $first: '$productDetails.category' },
-                    totalRentals: { $sum: 1 },
-                    totalRevenue: { $sum: '$products.price' },
-                    averageRentalDuration: {
-                        $avg: {
-                            $divide: [
-                                { $subtract: ['$returnDate', '$startDate'] },
-                                1000 * 60 * 60 * 24 // Convert to days
-                            ]
-                        }
-                    }
+                    _id: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } },
+                    totalAmount: { $sum: "$amount" },
+                    count: { $sum: 1 }
                 }
-            },
-            {
-                $project: {
-                    productName: 1,
-                    category: 1,
-                    totalRentals: 1,
-                    totalRevenue: 1,
-                    averageRentalDuration: { $round: ['$averageRentalDuration', 1] },
-                    revenuePerRental: {
-                        $round: [{ $divide: ['$totalRevenue', '$totalRentals'] }, 2]
-                    }
-                }
-            },
-            { $sort: { totalRentals: -1 } },
-            { $limit: limit }
+            }
         ]);
 
-        sendResponse(res, stats);
+        const stats = dailyStats[0] || { totalAmount: 0, count: 0 };
+        delete stats._id;
+
+        sendResponse(res, {
+            date: date.format('YYYY-MM-DD'),
+            stats
+        });
     } catch (error) {
         sendResponse(res, null, error, 500);
     }
 };
 
-// Product Statistics with dynamic time grouping
-const getProductStats = async (groupBy, dateRange) => {
-    const groupings = {
-        daily: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } },
-        weekly: { $week: '$createdAt' },
-        monthly: {
-            year: { $year: '$createdAt' },
-            month: { $month: '$createdAt' }
-        },
-        yearly: { $year: '$createdAt' }
-    };
+// Get weekly revenue statistics
+const getWeeklyRevenue = async (req, res) => {
+    try {
+        const startDate = moment().startOf('week');
+        const endDate = moment().endOf('week');
 
-    return Rental.aggregate([
-        {
-            $match: {
-                createdAt: { $gte: dateRange.startDate, $lte: dateRange.endDate }
-            }
-        },
-        { $unwind: '$products' },
-        {
-            $group: {
-                _id: groupings[groupBy],
-                totalRentals: { $sum: 1 },
-                totalRevenue: { $sum: '$products.price' },
-                uniqueProducts: { $addToSet: '$products.product' }
-            }
-        },
-        {
-            $project: {
-                totalRentals: 1,
-                totalRevenue: 1,
-                uniqueProductCount: { $size: '$uniqueProducts' },
-                averageRevenuePerRental: {
-                    $round: [{ $divide: ['$totalRevenue', '$totalRentals'] }, 2]
+        const weeklyStats = await Payment.aggregate([
+            {
+                $match: {
+                    createdAt: { $gte: startDate.toDate(), $lte: endDate.toDate() }
+                }
+            },
+            {
+                $group: {
+                    _id: { $dateToString: { format: "%Y-%U", date: "$createdAt" } },
+                    totalAmount: { $sum: "$amount" },
+                    count: { $sum: 1 }
                 }
             }
-        },
-        { $sort: { '_id': 1 } }
-    ]);
+        ]);
+
+        const stats = weeklyStats[0] || { totalAmount: 0, count: 0 };
+        delete stats._id;
+
+        sendResponse(res, {
+            weekStart: startDate.format('YYYY-MM-DD'),
+            weekEnd: endDate.format('YYYY-MM-DD'),
+            stats
+        });
+    } catch (error) {
+        sendResponse(res, null, error, 500);
+    }
 };
 
-// Generate time-based product endpoints
-['Daily', 'Weekly', 'Monthly', 'Yearly'].forEach(period => {
-    exports[`get${period}ProductStats`] = async (req, res) => {
-        try {
-            const dateRange = parseDateRange(req.query);
-            const stats = await getProductStats(period.toLowerCase(), dateRange);
-            sendResponse(res, stats);
-        } catch (error) {
-            sendResponse(res, null, error, 500);
-        }
-    };
-});
+// Get monthly revenue statistics
+const getMonthlyRevenue = async (req, res) => {
+    try {
+        const startDate = moment().startOf('month');
+        const endDate = moment().endOf('month');
+
+        const monthlyStats = await Payment.aggregate([
+            {
+                $match: {
+                    createdAt: { $gte: startDate.toDate(), $lte: endDate.toDate() }
+                }
+            },
+            {
+                $group: {
+                    _id: { $dateToString: { format: "%Y-%m", date: "$createdAt" } },
+                    totalAmount: { $sum: "$amount" },
+                    count: { $sum: 1 }
+                }
+            }
+        ]);
+
+        const stats = monthlyStats[0] || { totalAmount: 0, count: 0 };
+        delete stats._id;
+
+        sendResponse(res, {
+            month: startDate.format('YYYY-MM'),
+            stats
+        });
+    } catch (error) {
+        sendResponse(res, null, error, 500);
+    }
+};
+
+// Get yearly revenue statistics
+const getYearlyRevenue = async (req, res) => {
+    try {
+        const startDate = moment().startOf('year');
+        const endDate = moment().endOf('year');
+
+        const yearlyStats = await Payment.aggregate([
+            {
+                $match: {
+                    createdAt: { $gte: startDate.toDate(), $lte: endDate.toDate() }
+                }
+            },
+            {
+                $group: {
+                    _id: { $dateToString: { format: "%Y", date: "$createdAt" } },
+                    totalAmount: { $sum: "$amount" },
+                    count: { $sum: 1 }
+                }
+            }
+        ]);
+
+        const stats = yearlyStats[0] || { totalAmount: 0, count: 0 };
+        delete stats._id;
+
+        sendResponse(res, {
+            year: startDate.format('YYYY'),
+            stats
+        });
+    } catch (error) {
+        sendResponse(res, null, error, 500);
+    }
+};
+
+// Get top 5 customers by payment
+const getTopCustomers = async (req, res) => {
+    try {
+        const startDate = moment().startOf('month');
+        const endDate = moment().endOf('month');
+
+        const topCustomers = await Payment.aggregate([
+            {
+                $match: {
+                    createdAt: { $gte: startDate.toDate(), $lte: endDate.toDate() }
+                }
+            },
+            {
+                $group: {
+                    _id: "$customer",
+                    totalAmount: { $sum: "$amount" },
+                    paymentCount: { $sum: 1 }
+                }
+            },
+            {
+                $lookup: {
+                    from: "customers",
+                    localField: "_id",
+                    foreignField: "_id",
+                    as: "customerInfo"
+                }
+            },
+            { $unwind: "$customerInfo" },
+            {
+                $project: {
+                    _id: 1,
+                    totalAmount: 1,
+                    paymentCount: 1,
+                    customerName: "$customerInfo.name",
+                    customerPhone: "$customerInfo.phone"
+                }
+            },
+            { $sort: { totalAmount: -1 } },
+            { $limit: 5 }
+        ]);
+
+        sendResponse(res, topCustomers);
+    } catch (error) {
+        sendResponse(res, null, error, 500);
+    }
+};
+
+// Get most rented cars
+const getMostRentedCars = async (req, res) => {
+    try {
+        const mostRentedCars = await Car.aggregate([
+            {
+                $sort: { rentalCount: -1 }
+            },
+            {
+                $limit: 5
+            },
+            {
+                $project: {
+                    _id: { $toString: "$_id" },
+                    model: true,
+                    brand: true,
+                    rentalCount: true
+                }
+            }
+        ]);
+
+        sendResponse(res, mostRentedCars);
+    } catch (error) {
+        sendResponse(res, null, error, 500);
+    }
+};
+
+module.exports = {
+    getDailyRevenue,
+    getWeeklyRevenue,
+    getMonthlyRevenue,
+    getYearlyRevenue,
+    getTopCustomers,
+    getMostRentedCars
+};
