@@ -23,6 +23,7 @@ const rentalSchema = new mongoose.Schema(
             {
                 product: { type: mongoose.Schema.Types.ObjectId, ref: "Product", required: true },
                 quantity: { type: Number, required: true },
+                startDate: { type: Date, required: true },
                 returnDate: { type: Date, required: true },
                 cost: { 
                     type: Number,
@@ -35,14 +36,22 @@ const rentalSchema = new mongoose.Schema(
             required: true,
             default: 0
         },
+        payedAmount: { 
+            type: Number,
+            required: true,
+            default: 0
+        },
+        debt: { 
+            type: Number,
+            required: true,
+            default: 0
+        },
         status: {
             type: String,
             enum: ['active', 'completed', 'cancelled'],
             default: 'active',
         },
         workStartDate: { type: Date, required: true, default: Date.now },
-        startDate: { type: Date, required: true, default: Date.now },
-        endDate: { type: Date, required: true, default: Date.now }
     },
     { timestamps: true }
 );

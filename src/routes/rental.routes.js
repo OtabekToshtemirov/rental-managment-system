@@ -1,21 +1,21 @@
-const express = require('express')
-const router = express.Router()
-const rentalController = require('../controllers/rentalController')
+const express = require('express');
+const router = express.Router();
+const rentalController = require('../controllers/rentalController');
 
-// Filter routes (must come before /:id routes to avoid conflicts)
-router.get('/active', rentalController.getActiveRentals)
-router.get('/completed', rentalController.getCompletedRentals)
-router.get('/customer/:customerId', rentalController.getRentalsByCustomerId)
-
-// Product management routes
-router.post('/:rentalId/return', rentalController.addReturnedProduct) 
-router.post('/:rentalId/borrow', rentalController.addBorrowedProduct)
+// Filter routes
+router.get('/active', rentalController.getActiveRentals);
+router.get('/complete', rentalController.getCompleteRentals);
+router.get('/customer/:customerId', rentalController.getRentalsByCustomerId);
+router.get('/car/:carId', rentalController.getRentalsByCarId);
 
 // Basic CRUD operations
-router.post('/', rentalController.createRental)
-router.get('/', rentalController.getAllRentals)
-router.get('/:id', rentalController.getRentalById)
-router.put('/:id', rentalController.updateRental)
-router.delete('/:id', rentalController.deleteRental)
+router.post('/', rentalController.createRental);
+router.get('/', rentalController.getAllRentals);
+router.get('/:id', rentalController.getRentalById);
+router.put('/:id', rentalController.editRental);
+router.delete('/:id', rentalController.deleteRental);
 
-module.exports = router
+// Product return
+router.post('/return', rentalController.returnProduct);
+
+module.exports = router;

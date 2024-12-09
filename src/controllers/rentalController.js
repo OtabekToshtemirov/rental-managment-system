@@ -1,148 +1,260 @@
-const express = require('express');
 const Rental = require('../models/Rental');
 const Product = require('../models/Product');
-const Customer = require('../models/Customer');
-const Car = require('../models/Car');
-const moment = require('moment');
-const mongoose = require('mongoose');
 
-const router = express.Router();
+// Mahsulot ijaraga olish
+exports.createRental = async (req, res) => {
+    try {
+        const { customer, car, borrowedProducts, startDate } = req.body;
 
-// Helper to handle async errors
-const asyncHandler = fn => (req, res, next) => {
-    Promise.resolve(fn(req, res, next)).catch(next);
-};
+        let totalCost = 0;
 
-// Helper: Validate date inputs
-const validateDates = (startDate, endDate) => {
-    if (!moment(startDate).isValid() || !moment(endDate).isValid()) {
-        throw new Error('Noto‘g‘ri sana formati');
-    }
-    if (moment(endDate).isBefore(moment(startDate))) {
-        throw new Error('Tugash sanasi boshlang‘ich sanadan oldin bo‘lishi mumkin emas');
-    }
-};
-
-// Create a rental
-router.post('/', asyncHandler(async (req, res) => {
-    const { customer, borrowedProducts, startDate, endDate, car, status } = req.body;
-
-    // Validate fields
-    if (!customer || !borrowedProducts || !startDate || !endDate) {
-        return res.status(400).json({ success: false, message: "Mijoz, mahsulotlar va sanalar talab qilinadi" });
-    }
-    validateDates(startDate, endDate);
-
-    // Validate customer
-    const customerDoc = await Customer.findById(customer);
-    if (!customerDoc) {
-        return res.status(404).json({ success: false, message: "Mijoz topilmadi" });
-    }
-
-    // Validate and check product availability
-    const productUpdates = borrowedProducts.map(async (item) => {
-        const product = await Product.findById(item.product);
-        if (!product || product.quantity < item.quantity) {
-            throw new Error(`${item.product} ID raqamli mahsulot mavjud emas yoki yetarli miqdorda emas`);
+        // Validate all products first before making any changes
+        for (let item of borrowedProducts) {
+            const product = await Product.findById(item.product);
+            if (!product) {
+                return res.status(400).json({ message: `Mahsulot topilmadi: ${item.product}` });
+            }
+            if (product.quantity < item.quantity) {
+                return res.status(400).json({ 
+                    message: `Mahsulot yetarli miqdorda emas: ${product.name}`,
+                    available: product.quantity,
+                    requested: item.quantity
+                });
+            }
         }
-        return Product.findByIdAndUpdate(item.product, { $inc: { quantity: -item.quantity } }, { new: true });
-    });
-    await Promise.all(productUpdates);
 
-    // Create rental
-    const rental = new Rental({
-        customer,
-        borrowedProducts: borrowedProducts.map(item => ({ ...item, startDate, endDate })),
-        startDate,
-        endDate,
-        car,
-        status: status || 'active'
-    });
+        // Update products and calculate total cost
+        const productUpdates = [];
+        for (let item of borrowedProducts) {
+            const product = await Product.findById(item.product);
+            
+            const days = Math.ceil((new Date(item.endDate) - new Date(item.startDate)) / (1000 * 60 * 60 * 24));
+            totalCost += product.dailyRate * days * item.quantity;
 
-    // Update car availability
-    if (car) {
-        await Car.findByIdAndUpdate(car, { $set: { isAvailable: false } });
+            // Store update operation
+            productUpdates.push({
+                updateOne: {
+                    filter: { _id: product._id },
+                    update: { 
+                        $inc: { quantity: -item.quantity },
+                        $set: { isAvailable: (product.quantity - item.quantity) > 0 }
+                    }
+                }
+            });
+        }
+
+        // Create rental first
+        const rental = new Rental({
+            customer,
+            car,
+            borrowedProducts,
+            startDate: new Date(startDate),
+            totalCost,
+            status: 'active'
+        });
+
+        await rental.save();
+
+        // Then update all products in bulk
+        await Product.bulkWrite(productUpdates);
+
+        res.status(201).json(rental);
+    } catch (error) {
+        res.status(500).json({ message: 'Ijara yaratishda xatolik yuz berdi', error });
     }
-
-    await rental.save();
-    res.status(201).json({ success: true, message: 'Ijara muvaffaqiyatli yaratildi', data: rental });
-}));
-
-// Add borrowed product
-router.post('/:rentalId/borrow', asyncHandler(async (req, res) => {
-    const { rentalId } = req.params;
-    const { product, quantity, startDate, endDate } = req.body;
-
-    // Validate dates
-    validateDates(startDate, endDate);
-
-    // Validate rental
-    const rental = await Rental.findById(rentalId);
-    if (!rental) {
-        return res.status(404).json({ success: false, message: "Ijara topilmadi" });
+};
+//get all rentals
+exports.getAllRentals = async (req, res) => {
+    try {
+        const rentals = await Rental.find()
+            .populate('customer')
+            .populate('car')
+            .populate('borrowedProducts.product')
+            .populate('returnedProducts.product');
+        res.json(rentals);
+    } catch (error) {
+        res.status(500).json({ message: 'Ijaralarni olishda xatolik yuz berdi', error });
     }
+};
 
-    // Check product availability
-    const productDoc = await Product.findById(product);
-    if (!productDoc || productDoc.quantity < quantity) {
-        return res.status(400).json({ success: false, message: "Mahsulot yetarli miqdorda mavjud emas" });
+// Ijara olish
+exports.getRentalById = async (req, res) => {
+    try {
+        const rental = await Rental.findById(req.params.id).populate('customer car');
+        if (!rental) {
+            return res.status(404).json({ message: 'Ijara topilmadi' });
+        }
+        res.json(rental);
+    } catch (error) {
+        res.status(500).json({ message: 'Ijarani olishda xatolik yuz berdi', error });
     }
+};
 
-    rental.borrowedProducts.push({ product, quantity, startDate, endDate });
-    await Product.findByIdAndUpdate(product, { $inc: { quantity: -quantity } });
-
-    await rental.save();
-    res.json({ success: true, message: "Mahsulot ijaraga qo'shildi", data: rental });
-}));
-
-// Add returned product
-router.post('/:rentalId/return', asyncHandler(async (req, res) => {
-    const { rentalId } = req.params;
-    const { product, quantity, returnDate } = req.body;
-
-    // Validate rental
-    const rental = await Rental.findById(rentalId).populate('borrowedProducts.product');
-    if (!rental) {
-        return res.status(404).json({ success: false, message: "Ijara topilmadi" });
+// Aktiv ijaralarni olish
+exports.getActiveRentals = async (req, res) => {
+    try {
+        const rentals = await Rental.find({ status: 'active' }).populate('customer car');
+        res.json(rentals);
+    } catch (error) {
+        res.status(500).json({ message: 'Aktiv ijaralarni olishda xatolik yuz berdi', error });
     }
+};
 
-    const borrowedProduct = rental.borrowedProducts.find(bp => bp.product._id.toString() === product);
-    if (!borrowedProduct || borrowedProduct.quantity < quantity) {
-        return res.status(400).json({ success: false, message: "Qaytarilayotgan miqdor noto'g'ri" });
+// Tamomlangan ijaralarni olish
+exports.getCompleteRentals = async (req, res) => {
+    try {
+        const rentals = await Rental.find({ status: 'complete' }).populate('customer car');
+        res.json(rentals);
+    } catch (error) {
+        res.status(500).json({ message: 'Tamamlangan ijaralarni olishda xatolik yuz berdi', error });
     }
+};
 
-    borrowedProduct.quantity -= quantity;
-    rental.returnedProducts.push({ product, quantity, returnDate });
-
-    // Update product inventory
-    await Product.findByIdAndUpdate(product, { $inc: { quantity } });
-    await rental.save();
-
-    res.json({ success: true, message: "Mahsulot qaytarildi", data: rental });
-}));
-
-// Get all rentals
-router.get('/', asyncHandler(async (req, res) => {
-    const rentals = await Rental.find()
-        .populate('customer', 'name phone')
-        .populate('car', 'carNumber driverName')
-        .sort('-createdAt');
-
-    res.json({ success: true, data: rentals });
-}));
-
-// Get rental by ID
-router.get('/:id', asyncHandler(async (req, res) => {
-    const rental = await Rental.findById(req.params.id)
-        .populate('customer', 'name phone')
-        .populate('borrowedProducts.product', 'name')
-        .populate('returnedProducts.product', 'name');
-
-    if (!rental) {
-        return res.status(404).json({ success: false, message: "Ijara topilmadi" });
+// get rentals by customer id
+exports.getRentalsByCustomerId = async (req, res) => {
+    try {
+        const rentals = await Rental.find({ customer: req.params.customerId }).populate('customer car');
+        res.json(rentals);
+    } catch (error) {
+        res.status(500).json({ message: 'Ijaralarni olishda xatolik yuz berdi', error });
     }
+};
 
-    res.json({ success: true, data: rental });
-}));
+// get rentals by car id
+exports.getRentalsByCarId = async (req, res) => {
+    try {
+        const rentals = await Rental.find({ car: req.params.carId }).populate('customer car');
+        res.json(rentals);
+    } catch (error) {
+        res.status(500).json({ message: 'Ijaralarni olishda xatolik yuz berdi', error });
+    }
+};
 
-module.exports = router;
+// Mahsulotlarni qaytarish
+exports.returnProduct = async (req, res) => {
+    try {
+        const { rentalId, returnedProducts } = req.body;
+
+        const rental = await Rental.findById(rentalId).populate('borrowedProducts.product');
+
+        if (!rental) {
+            return res.status(404).json({ message: 'Ijara topilmadi' });
+        }
+
+        for (let returned of returnedProducts) {
+            const borrowed = rental.borrowedProducts.find(bp => bp.product.equals(returned.product));
+
+            if (!borrowed || borrowed.quantity < returned.quantity) {
+                return res.status(400).json({ message: `Qaytarilayotgan mahsulot miqdori noto‘g‘ri: ${borrowed.product.name}` });
+            }
+
+            const product = await Product.findById(returned.product);
+            const days = Math.ceil((new Date(returned.returnDate) - new Date(borrowed.startDate)) / (1000 * 60 * 60 * 24));
+            const cost = days * product.dailyRate * returned.quantity;
+
+            product.quantity += returned.quantity;
+            product.isAvailable = true;
+            await product.save();
+
+            rental.returnedProducts.push({
+                ...returned,
+                cost,
+            });
+
+            borrowed.quantity -= returned.quantity;
+        }
+
+        rental.totalCost += rental.returnedProducts.reduce((acc, rp) => acc + rp.cost, 0);
+        rental.status = rental.borrowedProducts.every(bp => bp.quantity === 0) ? 'completed' : 'active';
+
+        await rental.save();
+        res.status(200).json(rental);
+    } catch (error) {
+        res.status(500).json({ message: 'Mahsulotlarni qaytarishda xatolik yuz berdi', error });
+    }
+};
+// Ijara yangilash
+
+exports.editRental = async (req, res) => {
+    try {
+        const { borrowedProducts, startDate, endDate, car } = req.body;
+        const rentalId = req.params.id;
+
+        // Ijarani topamiz
+        const rental = await Rental.findById(rentalId).populate('borrowedProducts.product');
+
+        if (!rental) {
+            return res.status(404).json({ message: 'Ijara topilmadi' });
+        }
+
+        // Oldingi mahsulotlarni qaytarish va zaxirani yangilash
+        for (let item of rental.borrowedProducts) {
+            const product = await Product.findById(item.product);
+            const newQuantity = product.quantity + item.quantity;
+            await Product.findByIdAndUpdate(
+                item.product,
+                { 
+                    quantity: newQuantity,
+                    isAvailable: true 
+                },
+                { new: true }
+            );
+        }
+
+        // Yangi mahsulotlarni qo'shamiz
+        let totalCost = 0;
+
+        for (let item of borrowedProducts) {
+            const product = await Product.findById(item.product);
+
+            if (!product || product.quantity < item.quantity) {
+                return res.status(400).json({
+                    message: `Mahsulot mavjud emas yoki yetarli miqdorda emas: ${product.name}`,
+                });
+            }
+
+            const newQuantity = product.quantity - item.quantity;
+            await Product.findByIdAndUpdate(
+                item.product,
+                { 
+                    quantity: newQuantity,
+                    isAvailable: newQuantity > 0 
+                },
+                { new: true }
+            );
+
+            const days = Math.ceil((new Date(item.endDate) - new Date(item.startDate)) / (1000 * 60 * 60 * 24));
+            totalCost += product.dailyRate * days * item.quantity;
+        }
+
+        // Ijarani yangilaymiz
+        rental.borrowedProducts = borrowedProducts;
+        rental.startDate = startDate || rental.startDate;
+        rental.endDate = endDate || rental.endDate;
+        rental.car = car || rental.car;
+        rental.totalCost = totalCost;
+
+        await rental.save();
+        res.status(200).json({ message: 'Ijara muvaffaqiyatli yangilandi', rental });
+    } catch (error) {
+        res.status(500).json({ message: 'Ijara yangilashda xatolik yuz berdi', error });
+    }
+};
+
+
+// Ijara o'chirish
+exports.deleteRental = async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const rental = await Rental.findByIdAndDelete(id);
+
+        if (!rental) {
+            return res.status(404).json({ message: 'Ijara topilmadi' });
+        }
+
+        res.status(200).json({ message: 'Ijara o‘chirildi' });
+    } catch (error) {
+        res.status(500).json({ message: 'Ijara o‘chirishda xatolik yuz berdi', error });
+    }
+};
