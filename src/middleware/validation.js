@@ -43,13 +43,10 @@ exports.validateProducts = [
     }
 ];
 exports.validateExpense = [
-    body('title')
-        .trim().notEmpty().withMessage('Sarlavha kiritilishi shart')
-        .isLength({ min: 3, max: 100 }).withMessage('Sarlavha 3-100 belgi oralig\'ida bo\'lishi kerak'),
     body('amount')
         .isFloat({ min: 0 }).withMessage('Summa 0 dan katta bo\'lishi kerak'),
     body('category')
-        .isIn(['maosh', 'elektr', 'suv', 'transport', 'boshqa'])
+        .isIn(['maosh','elektr', 'suv', 'transport', 'boshqa', 'soliq', 'xaridlar', 'tamir'])
         .withMessage('Kategoriya noto\'g\'ri'),
     body('paymentMethod')
         .isIn(['karta', 'naqd']).withMessage('To\'lov usuli noto\'g\'ri'),

@@ -6,7 +6,6 @@ exports.createExpense = async (req, res) => {
         const { title, description, amount, category, paymentMethod, date } = req.body;
         
         const expense = new Expense({
-            title,
             description,
             amount,
             category,
@@ -54,7 +53,7 @@ exports.getAllExpenses = async (req, res) => {
         }
 
         const expenses = await Expense.find(query)
-            .sort({ date: -1 });
+            .sort({ "timestamp": 1 });
             
         res.json(expenses);
     } catch (error) {

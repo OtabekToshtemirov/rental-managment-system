@@ -1,13 +1,8 @@
 const mongoose = require('mongoose');
 
 const expenseSchema = new mongoose.Schema({
-    title: {
-        type: String,
-        required: true
-    },
     description: {
         type: String,
-        required: true
     },
     amount: {
         type: Number,
@@ -17,7 +12,7 @@ const expenseSchema = new mongoose.Schema({
     category: {
         type: String,
         required: true,
-        enum: ['maosh','elektr', 'suv', 'transport', 'boshqa']
+        enum: ['maosh','elektr', 'suv', 'transport', 'boshqa', 'soliq', 'xaridlar', 'tamir']
     },
     paymentMethod: {
         type: String,
@@ -28,16 +23,7 @@ const expenseSchema = new mongoose.Schema({
         type: Date,
         required: true,
         default: Date.now
-    },
-    notes: String,
-    attachments: [{
-        filename: String,
-        path: String,
-        uploadDate: {
-            type: Date,
-            default: Date.now
-        }
-    }]
+    }
 }, {
     timestamps: true
 });

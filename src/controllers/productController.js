@@ -31,7 +31,7 @@ exports.getProductById = async (req, res) => {
 
     const rentals = await Rental.find({ products: req.params.id }).populate(
       'customer',
-      'name phone'
+      'name phone',
     )
     res.json({ product, rentals })
   } catch (error) {

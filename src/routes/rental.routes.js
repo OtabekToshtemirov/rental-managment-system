@@ -7,6 +7,7 @@ router.get('/active', rentalController.getActiveRentals);
 router.get('/complete', rentalController.getCompleteRentals);
 router.get('/customer/:customerId', rentalController.getRentalsByCustomerId);
 router.get('/car/:carId', rentalController.getRentalsByCarId);
+router.get('/product/:productId', rentalController.getRentalsByProductId);
 
 // Basic CRUD operations
 router.post('/', rentalController.createRental);
