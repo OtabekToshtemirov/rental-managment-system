@@ -17,6 +17,9 @@ router.put('/:id', rentalController.editRental);
 router.delete('/:id', rentalController.deleteRental);
 
 // Product return
-router.post('/return', rentalController.returnProduct);
+router.post('/:rentalId/return', rentalController.returnProduct);
+
+//Payment 
+router.post('/:rentalId/payment', rentalController.addPayment);
 
 module.exports = router;

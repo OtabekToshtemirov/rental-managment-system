@@ -7,6 +7,10 @@ const paymentSchema = new mongoose.Schema(
             ref: 'Customer',
             required: true,
         },
+        rental: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'Rental',
+        },
         amount: {
             type: Number,
             required: true,
@@ -16,17 +20,21 @@ const paymentSchema = new mongoose.Schema(
             required: true,
             default: Date.now,
         },
-        paymentMethod: {
+        paymentType: {
             type: String,
-            enum: ['cash', 'card'],
+            enum: ['cash', 'card', 'transfer'],
             required: true,
             default: 'cash',
         },
-        memo: {
+        isPrepaid: {
+            type: Boolean,
+            default: false
+        },
+        description: {
             type: String,
         }
     },
     {timestamps: true}
-)
+);
 
-module.exports = mongoose.model('Payment', paymentSchema)
+module.exports = mongoose.model('Payment', paymentSchema);
