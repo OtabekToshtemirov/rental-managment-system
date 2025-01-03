@@ -211,9 +211,12 @@ const getMostRentedCars = async (req, res) => {
             {
                 $project: {
                     _id: { $toString: "$_id" },
-                    model: true,
-                    brand: true,
-                    rentalCount: true
+                    carNumber: 1,
+                    driverName: 1,
+                    driverPhone: 1,
+                    rentalCount: 1,
+                    createdAt: 1,
+                    updatedAt: 1,
                 }
             }
         ]);

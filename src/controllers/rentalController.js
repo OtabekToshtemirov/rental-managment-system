@@ -140,6 +140,7 @@ exports.createRental = async (req, res) => {
             createdAt: now,
             totalCost: Number(rentalData.totalCost || 0),
             debt: initialDebt,
+            description: req.body.description
         });
 
         // Save rental

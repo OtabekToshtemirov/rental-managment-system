@@ -98,6 +98,9 @@ const rentalSchema = new Schema({
         enum: ['active', 'completed', 'cancelled'],
         default: 'active',
         required: true
+    },
+    description: {
+        type: String
     }
 }, {
     timestamps: true
