@@ -8,8 +8,7 @@ const productSchema = new mongoose.Schema(
             trim: true
         },
         description: {
-            type: String,
-            required: [true, 'Mahsulot tavsifi kiritilishi shart']
+            type: String
         },
         category: {
             type: String,
