@@ -41,9 +41,33 @@ const returnedProductSchema = new Schema({
         required: true,
         min: [1, 'Miqdor 1 dan kam bo\'lmasligi kerak']
     },
+    startDate: { 
+        type: Date, 
+        required: true 
+    },
     returnDate: { 
         type: Date, 
         required: true 
+    },
+    dailyRate: {
+        type: Number,
+        required: true,
+        min: [0, 'Kunlik narx 0 dan kam bo\'lmasligi kerak']
+    },
+    discountDays: {
+        type: Number,
+        default: 0,
+        min: [0, 'Chegirma kunlar 0 dan kam bo\'lmasligi kerak']
+    },
+    days: {
+        type: Number,
+        required: true,
+        min: [1, 'Kunlar soni 1 dan kam bo\'lmasligi kerak']
+    },
+    totalCost: {
+        type: Number,
+        required: true,
+        min: [0, 'Jami summa 0 dan kam bo\'lmasligi kerak']
     }
 });
 

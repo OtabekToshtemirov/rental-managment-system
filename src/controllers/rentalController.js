@@ -191,7 +191,7 @@ exports.getAllRentals = async (req, res) => {
     try {
         console.log('Fetching all rentals...');
         const rentals = await Rental.find()
-            .populate('car')
+            
             .populate('customer')
             .populate({
                 path: 'borrowedProducts.product',
@@ -311,6 +311,8 @@ exports.returnProduct = async (req, res) => {
 
         // Process each returned product
         for (const returnItem of returnData.products) {
+            console.log('Processing return item:', returnItem);
+
             if (!returnItem.product || !returnItem.quantity || !returnItem.returnDate) {
                 throw new Error('Missing required fields in return item');
             }
@@ -324,12 +326,21 @@ exports.returnProduct = async (req, res) => {
             }
 
             // Calculate days and cost for this product
-            const startDate = new Date(borrowedProduct.startDate || rental.startDate);
+            const startDate = new Date(returnItem.startDate || borrowedProduct.startDate || rental.startDate);
             const returnDate = new Date(returnItem.returnDate);
-            const days = Math.ceil((returnDate - startDate) / (1000 * 60 * 60 * 24));
-            const productCost = days * borrowedProduct.dailyRate * returnItem.quantity;
+            const days = Math.max(1, Math.ceil((returnDate - startDate) / (1000 * 60 * 60 * 24)));
+            
+            // Chegirma kunlarini hisoblaymiz
+            const discountDays = Number(returnItem.discountDays) || 0;
+            
+            // Kunlik narxni olamiz
+            const dailyRate = Number(returnItem.dailyRate) || Number(borrowedProduct.dailyRate) || 0;
+            
+            // Jami summani hisoblaymiz
+            const totalDays = Math.max(1, days - discountDays);
+            const totalCost = Number(totalDays * dailyRate * returnItem.quantity);
 
-            totalReturnAmount += productCost;
+            totalReturnAmount += totalCost;
 
             try {
                 // Update product quantity in inventory
@@ -338,13 +349,19 @@ exports.returnProduct = async (req, res) => {
                 });
 
                 // Add to returned products
-                rental.returnedProducts.push({
+                const returnedProduct = {
                     product: returnItem.product,
-                    quantity: returnItem.quantity,
-                    returnDate: returnItem.returnDate,
-                    days: days,
-                    cost: productCost
-                });
+                    quantity: Number(returnItem.quantity),
+                    startDate: startDate,
+                    returnDate: returnDate,
+                    dailyRate: Number(dailyRate),
+                    discountDays: Number(discountDays),
+                    totalCost: Number(totalCost),
+                    days: Number(totalDays)
+                };
+
+                console.log('Adding returned product:', returnedProduct);
+                rental.returnedProducts.push(returnedProduct);
             } catch (error) {
                 console.error('Error updating product:', error);
                 throw new Error(`Failed to update product ${returnItem.product}`);
