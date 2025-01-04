@@ -24,21 +24,17 @@ exports.createRental = async (req, res) => {
         let rentalNumber;
         try {
             // Find the latest rental with a valid rental number
-            const latestRental = await Rental.findOne({ 
-                rentalNumber: { $regex: /^IJARA-\d+$/ } 
+            const latestRental = await Rental.findOne({
+                rentalNumber: { $type: "string", $regex: /^\d+$/ }
             }).sort({ rentalNumber: -1 });
 
-            if (latestRental && latestRental.rentalNumber) {
-                // Extract the number and increment it
-                const matches = latestRental.rentalNumber.match(/^IJARA-(\d+)$/);
-                if (matches && matches[1]) {
-                    const nextNumber = parseInt(matches[1]) + 1;
-                    rentalNumber = `IJARA-${nextNumber}`;
-                } else {
-                    rentalNumber = 'IJARA-1';
-                }
+            if (latestRental && latestRental.rentalNumber && !isNaN(parseInt(latestRental.rentalNumber))) {
+                // Increment the number
+                const nextNumber = parseInt(latestRental.rentalNumber) + 1;
+                rentalNumber = nextNumber.toString();
             } else {
-                rentalNumber = 'IJARA-1';
+                // If no valid rental number found or if latest is NaN, start from 1
+                rentalNumber = '1';
             }
         } catch (error) {
             console.error('Error generating rental number:', error);
