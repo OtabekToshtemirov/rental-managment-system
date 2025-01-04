@@ -49,25 +49,25 @@ const returnedProductSchema = new Schema({
         type: Date, 
         required: true 
     },
-    dailyRate: {
-        type: Number,
-        required: true,
-        min: [0, 'Kunlik narx 0 dan kam bo\'lmasligi kerak']
-    },
-    discountDays: {
-        type: Number,
-        default: 0,
-        min: [0, 'Chegirma kunlar 0 dan kam bo\'lmasligi kerak']
-    },
     days: {
         type: Number,
         required: true,
         min: [1, 'Kunlar soni 1 dan kam bo\'lmasligi kerak']
     },
+    dailyRate: {
+        type: Number,
+        required: true,
+        min: [0, 'Kunlik narx 0 dan kam bo\'lmasligi kerak']
+    },
     totalCost: {
         type: Number,
         required: true,
-        min: [0, 'Jami summa 0 dan kam bo\'lmasligi kerak']
+        min: [0, 'Umumiy summa 0 dan kam bo\'lmasligi kerak']
+    },
+    discount: {
+        type: Number,
+        default: 0,
+        min: [0, 'Chegirma 0 dan kam bo\'lmasligi kerak']
     }
 });
 
@@ -79,8 +79,8 @@ const rentalSchema = new Schema({
     },
     customer: {
         type: mongoose.Schema.Types.ObjectId,
-        ref: "Customer",
-        required: [true, 'Mijoz tanlanishi shart']
+        ref: 'Customer',
+        required: [true, 'Mijoz kiritilishi shart']
     },
     car: {
         type: mongoose.Schema.Types.ObjectId,
@@ -88,6 +88,7 @@ const rentalSchema = new Schema({
     },
     borrowedProducts: {
         type: [borrowedProductSchema],
+        required: true,
         validate: {
             validator: function(products) {
                 return products.length > 0;
@@ -111,6 +112,16 @@ const rentalSchema = new Schema({
         required: [true, 'Umumiy summa kiritilishi shart'],
         min: [0, 'Umumiy summa 0 dan kam bo\'lmasligi kerak']
     },
+    paidAmount: {
+        type: Number,
+        default: 0,
+        min: [0, 'To\'langan summa 0 dan kam bo\'lmasligi kerak']
+    },
+    totalDiscount: {
+        type: Number,
+        default: 0,
+        min: [0, 'Umumiy chegirma 0 dan kam bo\'lmasligi kerak']
+    },
     debt: { 
         type: Number,
         required: true,
@@ -123,6 +134,10 @@ const rentalSchema = new Schema({
         default: 'active',
         required: true
     },
+    payments: [{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Payment'
+    }],
     description: {
         type: String
     }

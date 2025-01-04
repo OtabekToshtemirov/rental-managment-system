@@ -357,11 +357,15 @@ exports.returnProduct = async (req, res) => {
                     dailyRate: Number(dailyRate),
                     discountDays: Number(discountDays),
                     totalCost: Number(totalCost),
-                    days: Number(totalDays)
+                    days: Number(totalDays),
+                    discount: Number(returnItem.discount) || 0 // Add discount with default 0
                 };
 
                 console.log('Adding returned product:', returnedProduct);
                 rental.returnedProducts.push(returnedProduct);
+
+                // Update rental total discount
+                rental.totalDiscount = (rental.totalDiscount || 0) + (returnedProduct.discount || 0);
             } catch (error) {
                 console.error('Error updating product:', error);
                 throw new Error(`Failed to update product ${returnItem.product}`);

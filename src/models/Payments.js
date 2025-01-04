@@ -2,36 +2,31 @@ const mongoose = require('mongoose');
 
 const paymentSchema = new mongoose.Schema(
     {
-        customer: {
-            type: mongoose.Schema.Types.ObjectId,
-            ref: 'Customer',
-            required: true,
-        },
         rental: {
             type: mongoose.Schema.Types.ObjectId,
             ref: 'Rental',
+            required: true
         },
         amount: {
             type: Number,
-            required: true,
+            required: true
+        },
+        discount: {
+            type: Number,
+            default: 0
         },
         paymentDate: {
             type: Date,
-            required: true,
-            default: Date.now,
+            default: Date.now
         },
         paymentType: {
             type: String,
-            enum: ['cash', 'card', 'transfer'],
+            enum: ['cash', 'card'],
             required: true,
-            default: 'cash',
-        },
-        isPrepaid: {
-            type: Boolean,
-            default: false
+            default: 'cash'
         },
         description: {
-            type: String,
+            type: String
         }
     },
     {timestamps: true}
