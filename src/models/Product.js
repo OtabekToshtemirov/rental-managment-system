@@ -39,8 +39,9 @@ const productSchema = new mongoose.Schema(
         parts: [
             {
                 product: {
-                    type: String,
-                    required: [true, 'Qism mahsulot nomi kiritilishi shart']
+                    type: mongoose.Schema.Types.ObjectId,
+                    ref: 'Product',
+                    required: [true, 'Qism mahsulot tanlanishi shart']
                 },
                 quantity: {
                     type: Number,
@@ -54,7 +55,15 @@ const productSchema = new mongoose.Schema(
             default: 0,
         }
     },
-    {timestamps: true}
+    {
+        timestamps: true,
+        toJSON: { virtuals: true },
+        toObject: { virtuals: true }
+    }
 )
+
+productSchema.virtual('availability').get(function() {
+    return this.quantity > 0 && this.isAvailable
+})
 
 module.exports = mongoose.model('Product', productSchema)

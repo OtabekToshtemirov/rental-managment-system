@@ -43,86 +43,39 @@ exports.createRental = async (req, res) => {
                 details: error.message 
             });
         }
-       // add prepaid payment if provided
-       if (rentalData.prepaidAmount && parseFloat(rentalData.prepaidAmount) > 0) {
-        rentalData.payments = [{
-            amount: parseFloat(rentalData.prepaidAmount),
-            paymentType: 'cash',
-            paymentDate: new Date(),
-            description: 'Oldindan to\'lov'
-        }];
-        // Set initial debt to totalCost minus prepaid amount, ensuring it's not negative
-        rentalData.debt = Math.max(0, rentalData.totalCost - parseFloat(rentalData.prepaidAmount));
-        }
 
-        // Validate and check all products
-        const productChecks = [];
-        for (const item of rentalData.borrowedProducts) {
-            try {
-                if (!item.product) {
-                    return res.status(400).json({ message: 'Mahsulot ID si ko\'rsatilmagan' });
-                }
-
-                const product = await Product.findById(item.product);
-                if (!product) {
-                    return res.status(400).json({ message: `Mahsulot topilmadi: ${item.product}` });
-                }
-
-                if (!item.quantity || item.quantity < 1) {
-                    return res.status(400).json({ 
-                        message: `${product.name} uchun miqdor noto'g'ri: ${item.quantity}`
-                    });
-                }
-
-                if (product.quantity < item.quantity) {
-                    return res.status(400).json({ 
-                        message: `${product.name} mahsulotidan omborda ${product.quantity} ta mavjud, siz ${item.quantity} ta so'radingiz`
-                    });
-                }
-
-                productChecks.push({
-                    product: product._id,
-                    quantity: item.quantity,
-                    currentStock: product.quantity
-                });
-            } catch (error) {
-                console.error('Error checking product:', error);
-                return res.status(500).json({ 
-                    message: `Mahsulotni tekshirishda xatolik: ${error.message}`
-                });
-            }
-        }
-        // here increase for every product rental count
-        for (const prod of rentalData.borrowedProducts) {
-            const product = await Product.findById(prod.product);
-            product.rentalCount = (product.rentalCount || 0) + 1;
-            await product.save();
-        if (rentalData.car) {
-            const car = await Car.findById(rentalData.car);
-            if (car) {
-                car.rentalCount = (car.rentalCount || 0) + 1;
-                await car.save();
-            }
-        }
-        }
-
-        const now = new Date();
-        
-        // Calculate debt and payments
-        let initialDebt = Number(rentalData.totalCost || 0);
-        let initialPayments = [];
-        
+        // add prepaid payment if provided
         if (rentalData.prepaidAmount && parseFloat(rentalData.prepaidAmount) > 0) {
-            initialPayments = [{
+            rentalData.payments = [{
                 amount: parseFloat(rentalData.prepaidAmount),
                 paymentType: 'cash',
-                paymentDate: now,
+                paymentDate: new Date(),
                 description: 'Oldindan to\'lov'
             }];
-            initialDebt = Math.max(0, initialDebt - parseFloat(rentalData.prepaidAmount));
+            // Set initial debt to totalCost minus prepaid amount, ensuring it's not negative
+            rentalData.debt = Math.max(0, rentalData.totalCost - parseFloat(rentalData.prepaidAmount));
         }
 
-        // Create rental document
+        // Har bir mahsulot uchun miqdorini tekshirish va kamaytirish
+        for (const item of rentalData.borrowedProducts) {
+            const product = await Product.findById(item.product);
+            if (!product) {
+                return res.status(404).json({ message: `Mahsulot topilmadi: ${item.product}` });
+            }
+
+            // Miqdorni tekshirish
+            if (product.quantity < item.quantity) {
+                return res.status(400).json({ 
+                    message: `${product.name} mahsulotidan yetarli miqdor yo'q. Mavjud: ${product.quantity}, So'ralgan: ${item.quantity}` 
+                });
+            }
+
+            // Miqdorni kamaytirish
+            product.quantity -= item.quantity;
+            await product.save();
+        }
+
+        // Create the rental
         const rental = new Rental({
             ...rentalData,
             rentalNumber,
@@ -133,45 +86,42 @@ exports.createRental = async (req, res) => {
                 rentDate: new Date()
             })),
             status: 'active',
-            createdAt: now,
+            createdAt: new Date(),
             totalCost: Number(rentalData.totalCost || 0),
-            debt: initialDebt,
+            debt: rentalData.debt,
             description: req.body.description
         });
 
-        // Save rental
-        const savedRental = await rental.save();
-        console.log('Saved rental:', savedRental);
+        await rental.save();
 
         // create prepaid payment if provided
         if (rentalData.prepaidAmount && parseFloat(rentalData.prepaidAmount) > 0) {
             const payment = new Payment({
                 customer: rentalData.customer,
-                rental: savedRental._id,
+                rental: rental._id,
                 amount: parseFloat(rentalData.prepaidAmount),
                 paymentType: 'cash',
-                paymentDate: now,
+                paymentDate: new Date(),
                 isPrepaid: true,
                 description: 'Oldindan to\'lov'
             });
             await payment.save();
 
             // Update rental debt
-            savedRental.debt = Math.max(0, savedRental.totalCost - parseFloat(rentalData.prepaidAmount));
-            await savedRental.save();
+            rental.debt = Math.max(0, rental.totalCost - parseFloat(rentalData.prepaidAmount));
+            await rental.save();
         }
 
-        // Update product quantities
-        for (const check of productChecks) {
-            await Product.findByIdAndUpdate(check.product, {
-                $inc: { quantity: -check.quantity }
-            });
-        }
-
-        // Return populated rental
-        const populatedRental = await Rental.findById(savedRental._id)
+        // Populate the rental data
+        const populatedRental = await Rental.findById(rental._id)
             .populate('customer')
-            .populate('borrowedProducts.product')
+            .populate({
+                path: 'borrowedProducts.product',
+                populate: {
+                    path: 'parts.product',
+                    select: 'name'
+                }
+            })
             .populate('car');
 
         res.status(201).json(populatedRental);
@@ -241,10 +191,15 @@ exports.getAllRentals = async (req, res) => {
     try {
         console.log('Fetching all rentals...');
         const rentals = await Rental.find()
-            .populate('customer')
             .populate('car')
-            .populate('borrowedProducts.product')
-            .populate('returnedProducts.product')
+            .populate('customer')
+            .populate({
+                path: 'borrowedProducts.product',
+                populate: {
+                    path: 'parts.product',
+                    select: 'name'
+                }
+            })
             .sort({ createdAt: -1 });
 
         console.log(`Found ${rentals.length} rentals`);
@@ -440,13 +395,37 @@ exports.returnProduct = async (req, res) => {
 // Ijara olish
 exports.getRentalById = async (req, res) => {
     try {
-        const rental = await Rental.findById(req.params.id).populate('customer car');
+        const rental = await Rental.findById(req.params.id)
+            .populate('customer')
+            .populate({
+                path: 'borrowedProducts.product',
+                populate: {
+                    path: 'parts.product',
+                    select: 'name'
+                }
+            });
+
         if (!rental) {
             return res.status(404).json({ message: 'Ijara topilmadi' });
         }
-        res.json(rental);
+
+        // Calculate totals
+        const totalAmount = rental.borrowedProducts.reduce((sum, item) => {
+            return sum + (item.dailyRate * item.days);
+        }, 0);
+
+        const totalPaid = rental.payments ? rental.payments.reduce((sum, payment) => {
+            return sum + payment.amount;
+        }, 0) : 0;
+
+        const rentalObj = rental.toObject();
+        rentalObj.totalAmount = totalAmount;
+        rentalObj.totalPaid = totalPaid;
+        rentalObj.remainingAmount = totalAmount - totalPaid;
+
+        res.json(rentalObj);
     } catch (error) {
-        res.status(500).json({ message: 'Ijarani olishda xatolik yuz berdi', error });
+        res.status(500).json({ message: error.message });
     }
 };
 

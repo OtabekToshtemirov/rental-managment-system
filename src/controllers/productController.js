@@ -17,6 +17,10 @@ exports.createProduct = async (req, res) => {
 exports.getAllProducts = async (req, res) => {
   try {
     const products = await Product.find()
+      .populate({
+        path: 'parts.product',
+        select: 'name'
+      })
     res.json(products)
   } catch (error) {
     res.status(500).json({ message: error.message })
@@ -27,6 +31,10 @@ exports.getAllProducts = async (req, res) => {
 exports.getProductById = async (req, res) => {
   try {
     const product = await Product.findById(req.params.id)
+      .populate({
+        path: 'parts.product',
+        select: 'name'
+      })
     if (!product) return res.status(404).json({ message: 'Product not found' })
 
     const rentals = await Rental.find({ products: req.params.id }).populate(
@@ -42,9 +50,15 @@ exports.getProductById = async (req, res) => {
 // Update a product by ID
 exports.updateProduct = async (req, res) => {
   try {
-    const product = await Product.findByIdAndUpdate(req.params.id, req.body, {
-      new: true,
+    const product = await Product.findByIdAndUpdate(
+      req.params.id,
+      req.body,
+      { new: true, runValidators: true },
+    ).populate({
+      path: 'parts.product',
+      select: 'name'
     })
+    
     if (!product) return res.status(404).json({ message: 'Product not found' })
     res.json(product)
   } catch (error) {
