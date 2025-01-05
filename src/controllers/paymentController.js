@@ -7,11 +7,14 @@ const moment = require('moment')
 exports.createPayment = async (req, res) => {
     try {
         console.log('Payment request body:', req.body);
-        const { rental, amount, paymentType = 'cash', discount = 0, description } = req.body;
+        const { rental, customer, amount, paymentType = 'cash', discount = 0, description } = req.body;
 
         // Validate required fields
         if (!rental) {
             return res.status(400).json({ message: 'Rental ID is required' });
+        }
+        if (!customer) {
+            return res.status(400).json({ message: 'Customer ID is required' });
         }
         if (amount === undefined || amount === null) {
             return res.status(400).json({ message: 'Amount is required' });
@@ -25,6 +28,7 @@ exports.createPayment = async (req, res) => {
 
         console.log('Creating payment with:', {
             rental: rental,
+            customer: customer,
             amount: Number(amount),
             discount: Number(discount),
             paymentType,
@@ -34,10 +38,11 @@ exports.createPayment = async (req, res) => {
         // Create new payment
         const payment = new Payments({
             rental: rental,
+            customer: customer,
             amount: Number(amount),
             discount: Number(discount),
             paymentType: paymentType,
-            description: description,
+            description: `Qaytarish to'lovi - ${new Date().toLocaleDateString()}`,
             paymentDate: new Date()
         });
 
@@ -51,13 +56,11 @@ exports.createPayment = async (req, res) => {
         }
         rentalData.payments.push(payment._id);
 
-        // Update customer balance if customer exists
-        if (rentalData.customer) {
-            const customer = await Customers.findById(rentalData.customer._id);
-            if (customer) {
-                customer.balance = (customer.balance || 0) - Number(amount);
-                await customer.save();
-            }
+        // Update customer balance
+        const customerData = await Customers.findById(customer);
+        if (customerData) {
+            customerData.balance = (customerData.balance || 0) - Number(amount);
+            await customerData.save();
         }
 
         // Save payment and rental
@@ -68,6 +71,7 @@ exports.createPayment = async (req, res) => {
             paymentId: payment._id,
             amount: payment.amount,
             discount: payment.discount,
+            customer: payment.customer,
             rental: payment.rental
         });
 
@@ -78,7 +82,8 @@ exports.createPayment = async (req, res) => {
                 populate: {
                     path: 'customer'
                 }
-            });
+            })
+            .populate('customer');
 
         res.status(201).json({
             success: true,

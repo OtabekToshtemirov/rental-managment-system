@@ -47,6 +47,11 @@ const productSchema = new mongoose.Schema(
                     type: Number,
                     required: [true, 'Qism mahsulot miqdori kiritilishi shart'],
                     min: [1, 'Qism mahsulot miqdori 1 dan kam bo\'lishi mumkin emas']
+                },
+                dailyRate: {
+                    type: Number,
+                    required: [true, 'Qism mahsulot narxi kiritilishi shart'],
+                    min: [0, 'Qism mahsulot narxi 0 dan kam bo\'lishi mumkin emas']
                 }
             }
         ],
@@ -64,6 +69,16 @@ const productSchema = new mongoose.Schema(
 
 productSchema.virtual('availability').get(function() {
     return this.quantity > 0 && this.isAvailable
+})
+
+productSchema.pre('save', function(next) {
+    if (this.type === 'combo' && this.parts?.length > 0) {
+        // Calculate total daily rate from parts
+        this.dailyRate = this.parts.reduce((total, part) => {
+            return total + (part.dailyRate * part.quantity)
+        }, 0)
+    }
+    next()
 })
 
 module.exports = mongoose.model('Product', productSchema)

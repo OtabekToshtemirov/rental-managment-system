@@ -119,7 +119,8 @@ exports.createRental = async (req, res) => {
                 path: 'borrowedProducts.product',
                 populate: {
                     path: 'parts.product',
-                    select: 'name'
+                    model: 'Product',
+                    select: 'name type dailyRate'
                 }
             })
             .populate('car');
@@ -171,8 +172,22 @@ exports.addPayment = async (req, res) => {
         const populatedRental = await Rental.findById(rental._id)
             .populate('customer')
             .populate('car')
-            .populate('borrowedProducts.product')
-            .populate('returnedProducts.product');
+            .populate({
+                path: 'borrowedProducts.product',
+                populate: {
+                    path: 'parts.product',
+                    model: 'Product',
+                    select: 'name type dailyRate'
+                }
+            })
+            .populate({
+                path: 'returnedProducts.product',
+                populate: {
+                    path: 'parts.product',
+                    model: 'Product',
+                    select: 'name type dailyRate'
+                }
+            });
 
         res.json(populatedRental);
     } catch (error) {
@@ -191,13 +206,21 @@ exports.getAllRentals = async (req, res) => {
     try {
         console.log('Fetching all rentals...');
         const rentals = await Rental.find()
-            
             .populate('customer')
             .populate({
                 path: 'borrowedProducts.product',
                 populate: {
                     path: 'parts.product',
-                    select: 'name'
+                    model: 'Product',
+                    select: 'name type dailyRate'
+                }
+            })
+            .populate({
+                path: 'returnedProducts.product',
+                populate: {
+                    path: 'parts.product',
+                    model: 'Product',
+                    select: 'name type dailyRate'
                 }
             })
             .sort({ createdAt: -1 });
@@ -260,8 +283,22 @@ exports.getRentalsByCustomerId = async (req, res) => {
         const rentals = await Rental.find({ customer: req.params.id })
             .populate('customer')
             .populate('car')
-            .populate('borrowedProducts.product')
-            .populate('returnedProducts.product')
+            .populate({
+                path: 'borrowedProducts.product',
+                populate: {
+                    path: 'parts.product',
+                    model: 'Product',
+                    select: 'name type dailyRate'
+                }
+            })
+            .populate({
+                path: 'returnedProducts.product',
+                populate: {
+                    path: 'parts.product',
+                    model: 'Product',
+                    select: 'name type dailyRate'
+                }
+            })
             .sort({ createdAt: -1 });
 
         // Calculate rental days and total payments for each rental
@@ -422,7 +459,8 @@ exports.getRentalById = async (req, res) => {
                 path: 'borrowedProducts.product',
                 populate: {
                     path: 'parts.product',
-                    select: 'name'
+                    model: 'Product',
+                    select: 'name type dailyRate'
                 }
             });
 
@@ -489,8 +527,22 @@ exports.getRentalsByProductId = async (req, res) => {
             'borrowedProducts.product': productId
         })
         .populate('customer')
-        .populate('borrowedProducts.product')
-        .populate('returnedProducts.product')
+        .populate({
+            path: 'borrowedProducts.product',
+            populate: {
+                path: 'parts.product',
+                model: 'Product',
+                select: 'name type dailyRate'
+            }
+        })
+        .populate({
+            path: 'returnedProducts.product',
+            populate: {
+                path: 'parts.product',
+                model: 'Product',
+                select: 'name type dailyRate'
+            }
+        })
         .sort({ 'borrowedProducts.startDate': -1 }); // Eng yangi ijaralarni birinchi ko'rsatish
 
         res.json(rentals);

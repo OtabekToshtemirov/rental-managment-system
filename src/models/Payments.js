@@ -7,13 +7,20 @@ const paymentSchema = new mongoose.Schema(
             ref: 'Rental',
             required: true
         },
+        customer: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'Customer',
+            required: true
+        },
         amount: {
             type: Number,
-            required: true
+            required: true,
+            min: [0, 'To\'lov summasi 0 dan kam bo\'lmasligi kerak']
         },
         discount: {
             type: Number,
-            default: 0
+            default: 0,
+            min: [0, 'Chegirma summasi 0 dan kam bo\'lmasligi kerak']
         },
         paymentDate: {
             type: Date,
