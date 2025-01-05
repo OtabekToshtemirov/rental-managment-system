@@ -11,6 +11,26 @@ exports.createRental = async (req, res) => {
         const rentalData = req.body;
         console.log('Received rental data:', JSON.stringify(rentalData, null, 2));
 
+        // Muhim maydonlarni tekshirish
+        if (!rentalData.workStartDate) {
+            return res.status(400).json({ message: 'Ish boshlanish sanasi kiritilishi shart' });
+        }
+
+        if (!rentalData.totalCost || isNaN(rentalData.totalCost)) {
+            return res.status(400).json({ message: 'Umumiy summa noto\'g\'ri kiritilgan' });
+        }
+
+        // Oldindan to'lov tekshiruvi
+        if (rentalData.prepaidAmount) {
+            const prepaidAmount = parseFloat(rentalData.prepaidAmount);
+            if (isNaN(prepaidAmount) || prepaidAmount < 0) {
+                return res.status(400).json({ message: 'Oldindan to\'lov summasi noto\'g\'ri' });
+            }
+            if (prepaidAmount > rentalData.totalCost) {
+                return res.status(400).json({ message: 'Oldindan to\'lov umumiy summadan oshib ketdi' });
+            }
+        }
+
         // Basic validation
         if (!rentalData.customer) {
             return res.status(400).json({ message: 'Mijoz tanlanishi shart' });
@@ -46,17 +66,28 @@ exports.createRental = async (req, res) => {
 
         // add prepaid payment if provided
         if (rentalData.prepaidAmount && parseFloat(rentalData.prepaidAmount) > 0) {
-            rentalData.payments = [{
-                amount: parseFloat(rentalData.prepaidAmount),
-                paymentType: 'cash',
+            const prepaidAmount = parseFloat(rentalData.prepaidAmount);
+            
+            const payment = new Payment({
+                customer: rentalData.customer,
+                rental: rental._id,
+                amount: prepaidAmount,
+                paymentType: rentalData.paymentType || 'cash',
                 paymentDate: new Date(),
+                isPrepaid: true,
                 description: 'Oldindan to\'lov'
-            }];
-            // Set initial debt to totalCost minus prepaid amount, ensuring it's not negative
-            rentalData.debt = Math.max(0, rentalData.totalCost - parseFloat(rentalData.prepaidAmount));
+            });
+            
+            await payment.save();
+
+            // Qarzni yangilash
+            rental.debt = rental.totalCost - prepaidAmount;
+            rental.payments = [payment._id]; // To'lovlar ro'yxatini saqlash
+            await rental.save();
         }
 
         // Har bir mahsulot uchun miqdorini tekshirish va kamaytirish
+        const productUpdates = [];
         for (const item of rentalData.borrowedProducts) {
             const product = await Product.findById(item.product);
             if (!product) {
@@ -70,9 +101,18 @@ exports.createRental = async (req, res) => {
                 });
             }
 
-            // Miqdorni kamaytirish
-            product.quantity -= item.quantity;
-            await product.save();
+            // O'zgarishlarni to'plash
+            productUpdates.push({
+                updateOne: {
+                    filter: { _id: product._id },
+                    update: { $inc: { quantity: -item.quantity } }
+                }
+            });
+        }
+
+        // Barcha mahsulotlarni bir vaqtda yangilash
+        if (productUpdates.length > 0) {
+            await Product.bulkWrite(productUpdates);
         }
 
         // Create the rental
@@ -94,24 +134,6 @@ exports.createRental = async (req, res) => {
 
         await rental.save();
 
-        // create prepaid payment if provided
-        if (rentalData.prepaidAmount && parseFloat(rentalData.prepaidAmount) > 0) {
-            const payment = new Payment({
-                customer: rentalData.customer,
-                rental: rental._id,
-                amount: parseFloat(rentalData.prepaidAmount),
-                paymentType: 'cash',
-                paymentDate: new Date(),
-                isPrepaid: true,
-                description: 'Oldindan to\'lov'
-            });
-            await payment.save();
-
-            // Update rental debt
-            rental.debt = Math.max(0, rental.totalCost - parseFloat(rentalData.prepaidAmount));
-            await rental.save();
-        }
-
         // Populate the rental data
         const populatedRental = await Rental.findById(rental._id)
             .populate('customer')
@@ -127,10 +149,23 @@ exports.createRental = async (req, res) => {
 
         res.status(201).json(populatedRental);
     } catch (error) {
-        console.error('Error creating rental:', error);
-        res.status(500).json({ 
-            message: 'Ijarani yaratishda xatolik yuz berdi', 
-            error: error.message 
+        console.error('Ijara yaratishda xatolik:', error);
+        
+        let errorMessage = 'Ijarani yaratishda xatolik yuz berdi';
+        let statusCode = 500;
+
+        if (error.name === 'ValidationError') {
+            errorMessage = 'Ma\'lumotlar noto\'g\'ri kiritilgan';
+            statusCode = 400;
+        } else if (error.name === 'MongoError' && error.code === 11000) {
+            errorMessage = 'Bu ijara raqami allaqachon mavjud';
+            statusCode = 409;
+        }
+
+        res.status(statusCode).json({ 
+            message: errorMessage,
+            error: error.message,
+            details: process.env.NODE_ENV === 'development' ? error.stack : undefined
         });
     }
 };
@@ -457,6 +492,14 @@ exports.getRentalById = async (req, res) => {
             .populate('customer')
             .populate({
                 path: 'borrowedProducts.product',
+                populate: {
+                    path: 'parts.product',
+                    model: 'Product',
+                    select: 'name type dailyRate'
+                }
+            })
+            .populate({
+                path: 'returnedProducts.product',
                 populate: {
                     path: 'parts.product',
                     model: 'Product',

@@ -1,13 +1,13 @@
 const Payments = require('../models/Payments')
 const Customers = require('../models/Customer')
-const Rentals = require('../models/Rentals')
+const Rentals = require('../models/Rental')
 const moment = require('moment')
 
 // Create a new payment
 exports.createPayment = async (req, res) => {
     try {
         console.log('Payment request body:', req.body);
-        const { rental, customer, amount, paymentType = 'cash', discount = 0, description } = req.body;
+        const { rental, customer, amount, paymentType = 'cash', discount, description } = req.body;
 
         // Validate required fields
         if (!rental) {
@@ -59,7 +59,7 @@ exports.createPayment = async (req, res) => {
         // Update customer balance
         const customerData = await Customers.findById(customer);
         if (customerData) {
-            customerData.balance = (customerData.balance || 0) - Number(amount);
+            customerData.balance = (customerData.balance || 0) + Number(amount);
             await customerData.save();
         }
 
