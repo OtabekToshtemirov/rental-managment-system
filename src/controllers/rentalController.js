@@ -242,6 +242,7 @@ exports.getAllRentals = async (req, res) => {
         console.log('Fetching all rentals...');
         const rentals = await Rental.find()
             .populate('customer')
+            .populate('car')
             .populate({
                 path: 'borrowedProducts.product',
                 populate: {

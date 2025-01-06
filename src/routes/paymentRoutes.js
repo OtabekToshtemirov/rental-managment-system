@@ -8,6 +8,9 @@ router.post('/', paymentController.createPayment);
 // Get all payments
 router.get('/', paymentController.getAllPayments);
 
+// Get payments by customer
+router.get('/customer/:customerId', paymentController.getPaymentsByCustomerId);
+
 // Get a payment by ID
 router.get('/:id', paymentController.getPaymentById);
 

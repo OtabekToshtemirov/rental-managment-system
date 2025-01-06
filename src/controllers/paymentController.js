@@ -154,10 +154,22 @@ exports.deletePayment = async (req, res) => {
 // Get all payments by customer ID
 exports.getPaymentsByCustomerId = async (req, res) => {
     try {
-        const payments = await Payments.find({ customer: req.params.id })
-        res.json(payments)
+        console.log('Fetching payments for customer ID:', req.params.customerId);
+        const payments = await Payments.find({ customer: req.params.customerId })
+            .populate('customer')
+            .populate('rental')
+            .sort({ paymentDate: -1 }); // Sort by payment date descending
+        console.log('Found payments:', payments.length);
+        console.log('Payment details:', payments.map(p => ({
+            id: p._id,
+            amount: p.amount,
+            date: p.paymentDate,
+            customer: p.customer?._id
+        })));
+        res.json(payments);
     } catch (error) {
-        res.status(500).json({ message: error.message })
+        console.error('Error fetching payments:', error);
+        res.status(500).json({ message: error.message });
     }
 }
 
