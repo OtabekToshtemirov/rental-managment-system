@@ -4,8 +4,7 @@ const paymentSchema = new mongoose.Schema(
     {
         rental: {
             type: mongoose.Schema.Types.ObjectId,
-            ref: 'Rental',
-            required: true
+            ref: 'Rental'
         },
         customer: {
             type: mongoose.Schema.Types.ObjectId,
@@ -34,9 +33,15 @@ const paymentSchema = new mongoose.Schema(
         },
         description: {
             type: String
+        },
+        isPrepaid: {
+            type: Boolean,
+            default: false
         }
     },
-    {timestamps: true}
+    {
+        timestamps: true
+    }
 );
 
 module.exports = mongoose.model('Payment', paymentSchema);

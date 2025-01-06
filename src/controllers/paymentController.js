@@ -7,54 +7,27 @@ const moment = require('moment')
 exports.createPayment = async (req, res) => {
     try {
         console.log('Payment request body:', req.body);
-        const { rental, customer, amount, paymentType = 'cash', discount, description } = req.body;
+        const { rental, customer, amount, paymentType = 'cash', discount = 0, description } = req.body;
 
-        // Validate required fields
-        if (!rental) {
-            return res.status(400).json({ message: 'Rental ID is required' });
-        }
         if (!customer) {
             return res.status(400).json({ message: 'Customer ID is required' });
         }
-        if (amount === undefined || amount === null) {
+        if (!amount) {
             return res.status(400).json({ message: 'Amount is required' });
         }
 
-        // Find rental and get customer
-        const rentalData = await Rentals.findById(rental).populate('customer');
-        if (!rentalData) {
-            return res.status(404).json({ message: 'Rental not found' });
-        }
-
-        console.log('Creating payment with:', {
-            rental: rental,
-            customer: customer,
-            amount: Number(amount),
-            discount: Number(discount),
-            paymentType,
-            description
-        });
-
-        // Create new payment
+        // Create payment object with valid date
         const payment = new Payments({
-            rental: rental,
-            customer: customer,
+            rental,
+            customer,
             amount: Number(amount),
+            paymentType,
             discount: Number(discount),
-            paymentType: paymentType,
-            description: `Qaytarish to'lovi - ${new Date().toLocaleDateString()}`,
-            paymentDate: new Date()
+            description,
+            paymentDate: new Date(),
         });
 
-        console.log('Created payment:', payment);
-
-        // Update rental with payment info
-        rentalData.paidAmount = (rentalData.paidAmount || 0) + Number(amount);
-        rentalData.totalDiscount = (rentalData.totalDiscount || 0) + Number(discount);
-        if (!rentalData.payments) {
-            rentalData.payments = [];
-        }
-        rentalData.payments.push(payment._id);
+        console.log('Created payment object:', payment.toObject());
 
         // Update customer balance
         const customerData = await Customers.findById(customer);
@@ -63,19 +36,16 @@ exports.createPayment = async (req, res) => {
             await customerData.save();
         }
 
-        // Save payment and rental
+        // Save payment
         await payment.save();
-        await rentalData.save();
 
         console.log('Saved payment with discount:', {
             paymentId: payment._id,
             amount: payment.amount,
-            discount: payment.discount,
-            customer: payment.customer,
-            rental: payment.rental
+            discount: payment.discount
         });
 
-        // Get populated payment
+        // Populate payment data
         const populatedPayment = await Payments.findById(payment._id)
             .populate({
                 path: 'rental',
@@ -85,17 +55,15 @@ exports.createPayment = async (req, res) => {
             })
             .populate('customer');
 
-        res.status(201).json({
+        res.status(201).json({  
             success: true,
-            payment: populatedPayment,
-            rental: rentalData
+            payment: populatedPayment
         });
     } catch (error) {
         console.error('Payment creation error:', error);
-        res.status(500).json({
-            success: false,
-            message: error.message || 'Error creating payment',
-            error: error.toString()
+        res.status(500).json({ 
+            success: false, 
+            message: error.message || 'Failed to create payment'
         });
     }
 };
@@ -348,7 +316,7 @@ exports.getPaymentMethodStats = async (req, res) => {
             },
             {
                 $group: {
-                    _id: "$paymentMethod",
+                    _id: "$paymentType",
                     amount: { $sum: "$amount" },
                     count: { $sum: 1 }
                 }

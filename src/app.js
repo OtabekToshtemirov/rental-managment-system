@@ -6,7 +6,10 @@ const expenseRoutes = require('./routes/expense.routes')
 const connectDB = require('./config/db')
 const errorHandler = require('./middlewares/error-handler')
 const { PORT, HOST } = require('./config/environments')
-
+const customerRoutes = require('./routes/customer.routes')
+const rentalRoutes = require('./routes/rental.routes')
+const productRoutes = require('./routes/product.routes')
+const paymentRoutes = require('./routes/paymentRoutes')
 
 const path = require('path')
 
@@ -18,6 +21,11 @@ app.use(express.json())
 app.use(express.urlencoded({ extended: true }))
 app.use(morgan())
 app.use('/api', router)
+app.use('/api/expenses', expenseRoutes)
+app.use('/api/customers', customerRoutes)
+app.use('/api/rentals', rentalRoutes)
+app.use('/api/products', productRoutes)
+app.use('/api/payments', paymentRoutes)
 app.use('/api/file', express.static(path.join(`${process.cwd()}/uploads`)))
 app.use('*', (req, res) => {
   if (req.params[0] !== '/favicon.ico') {

@@ -365,125 +365,110 @@ exports.getRentalsByCustomerId = async (req, res) => {
 exports.returnProduct = async (req, res) => {
     try {
         const { rentalId } = req.params;
-        const returnData = req.body;
+        const { products: returnedProducts } = req.body;
 
-        console.log('Return data received:', { rentalId, returnData });
-
-        if (!returnData.products || !Array.isArray(returnData.products)) {
-            return res.status(400).json({ message: 'Invalid products data' });
+        if (!Array.isArray(returnedProducts) || returnedProducts.length === 0) {
+            return res.status(400).json({ message: 'No products to process for return' });
         }
 
         const rental = await Rental.findById(rentalId);
-        if (!rental) {
-            return res.status(404).json({ message: 'Rental not found' });
-        }
+        if (!rental) return res.status(404).json({ message: 'Rental not found' });
 
-        // Calculate total return amount
         let totalReturnAmount = 0;
 
-        // Process each returned product
-        for (const returnItem of returnData.products) {
-            console.log('Processing return item:', returnItem);
-
-            if (!returnItem.product || !returnItem.quantity || !returnItem.returnDate) {
-                throw new Error('Missing required fields in return item');
+        // Validate all products first
+        for (const item of returnedProducts) {
+            const { product, quantity } = item;
+            
+            // Find borrowed product
+            const borrowedProduct = rental.borrowedProducts.find(
+                bp => bp.product.toString() === product
+            );
+            if (!borrowedProduct) {
+                throw new Error(`Product ${product} not found in rental`);
             }
+
+            // Calculate total returned quantity including this return
+            const alreadyReturnedQuantity = rental.returnedProducts
+                .filter(rp => rp.product.toString() === product)
+                .reduce((sum, rp) => sum + rp.quantity, 0);
+
+            // Check if return quantity exceeds remaining quantity
+            const remainingQuantity = borrowedProduct.quantity - alreadyReturnedQuantity;
+            if (quantity > remainingQuantity) {
+                throw new Error(`Cannot return more than borrowed quantity for product ${product}. Remaining: ${remainingQuantity}, Attempted: ${quantity}`);
+            }
+        }
+
+        // Process returns after validation
+        for (const item of returnedProducts) {
+            const { product, quantity, returnDate, discountDays = 0, dailyRate } = item;
 
             const borrowedProduct = rental.borrowedProducts.find(
-                bp => bp.product.toString() === returnItem.product
+                bp => bp.product.toString() === product
             );
 
-            if (!borrowedProduct) {
-                throw new Error(`Product ${returnItem.product} not found in rental`);
-            }
+            const startDate = new Date(borrowedProduct.startDate);
+            const calculatedReturnDate = new Date(returnDate);
+            const totalDays = Math.ceil((calculatedReturnDate - startDate) / (1000 * 60 * 60 * 24));
+            const effectiveDays = Math.max(1, totalDays - discountDays);
+            const cost = effectiveDays * (dailyRate || borrowedProduct.dailyRate) * quantity;
 
-            // Calculate days and cost for this product
-            const startDate = new Date(returnItem.startDate || borrowedProduct.startDate || rental.startDate);
-            const returnDate = new Date(returnItem.returnDate);
-            const days = Math.max(1, Math.ceil((returnDate - startDate) / (1000 * 60 * 60 * 24)));
-            
-            // Chegirma kunlarini hisoblaymiz
-            const discountDays = Number(returnItem.discountDays) || 0;
-            
-            // Kunlik narxni olamiz
-            const dailyRate = Number(returnItem.dailyRate) || Number(borrowedProduct.dailyRate) || 0;
-            
-            // Jami summani hisoblaymiz
-            const totalDays = Math.max(1, days - discountDays);
-            const totalCost = Number(totalDays * dailyRate * returnItem.quantity);
+            totalReturnAmount += cost;
 
-            totalReturnAmount += totalCost;
+            // Update inventory
+            await Product.findByIdAndUpdate(product, { $inc: { quantity } });
 
-            try {
-                // Update product quantity in inventory
-                await Product.findByIdAndUpdate(returnItem.product, {
-                    $inc: { quantity: returnItem.quantity }
-                });
-
-                // Add to returned products
-                const returnedProduct = {
-                    product: returnItem.product,
-                    quantity: Number(returnItem.quantity),
-                    startDate: startDate,
-                    returnDate: returnDate,
-                    dailyRate: Number(dailyRate),
-                    discountDays: Number(discountDays),
-                    totalCost: Number(totalCost),
-                    days: Number(totalDays),
-                    discount: Number(returnItem.discount) || 0 // Add discount with default 0
-                };
-
-                console.log('Adding returned product:', returnedProduct);
-                rental.returnedProducts.push(returnedProduct);
-
-                // Update rental total discount
-                rental.totalDiscount = (rental.totalDiscount || 0) + (returnedProduct.discount || 0);
-            } catch (error) {
-                console.error('Error updating product:', error);
-                throw new Error(`Failed to update product ${returnItem.product}`);
-            }
+            // Add returned product record
+            rental.returnedProducts.push({
+                product,
+                quantity,
+                startDate,
+                returnDate: calculatedReturnDate,
+                dailyRate: dailyRate || borrowedProduct.dailyRate,
+                discountDays,
+                totalCost: cost,
+                days: effectiveDays
+            });
         }
 
-        // Update customer balance (-)
-        try {
-            const customer = await Customer.findById(rental.customer);
-            if (customer) {
-                customer.balance = (customer.balance || 0) - totalReturnAmount;
-                await customer.save();
-            }
-        } catch (error) {
-            console.error('Error updating customer:', error);
-            throw new Error('Failed to update customer balance');
+        // Update rental total cost and discount
+        rental.totalCost = (rental.totalCost || 0) + totalReturnAmount;
+        rental.totalDiscount = rental.totalDiscount || 0;
+
+        // Update customer balance
+        const customer = await Customer.findById(rental.customer);
+        if (customer) {
+            customer.balance = (customer.balance || 0) - totalReturnAmount;
+            await customer.save();
         }
 
-        // Update rental status if all products are returned
-        const allProductsReturned = rental.borrowedProducts.every(bp => {
-            const returnedQuantity = rental.returnedProducts
+        // Check if all products are returned
+        const allReturned = rental.borrowedProducts.every(bp => {
+            const returnedQty = rental.returnedProducts
                 .filter(rp => rp.product.toString() === bp.product.toString())
                 .reduce((sum, rp) => sum + rp.quantity, 0);
-            return returnedQuantity >= bp.quantity;
+            return returnedQty >= bp.quantity;
         });
 
-        if (allProductsReturned) {
+        if (allReturned) {
             rental.status = 'completed';
             rental.endDate = new Date();
         }
 
         await rental.save();
 
-        res.json({
+        res.status(200).json({
             message: 'Products returned successfully',
-            rental: rental,
+            rental,
             totalReturnAmount
         });
     } catch (error) {
-        console.error('Return product error:', error);
-        res.status(500).json({ 
-            message: error.message || 'Failed to process return',
-            error: error.toString()
-        });
+        console.error('Return process error:', error);
+        res.status(500).json({ message: error.message || 'Error during return process' });
     }
 };
+
 
 // Ijara olish
 exports.getRentalById = async (req, res) => {
