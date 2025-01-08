@@ -10,6 +10,7 @@ const customerRoutes = require('./routes/customer.routes')
 const rentalRoutes = require('./routes/rental.routes')
 const productRoutes = require('./routes/product.routes')
 const paymentRoutes = require('./routes/paymentRoutes')
+const calendarNoteRoutes = require('./routes/calendarNoteRoutes')
 
 const path = require('path')
 
@@ -26,6 +27,7 @@ app.use('/api/customers', customerRoutes)
 app.use('/api/rentals', rentalRoutes)
 app.use('/api/products', productRoutes)
 app.use('/api/payments', paymentRoutes)
+app.use('/api/calendar-notes', calendarNoteRoutes)
 app.use('/api/file', express.static(path.join(`${process.cwd()}/uploads`)))
 app.use('*', (req, res) => {
   if (req.params[0] !== '/favicon.ico') {
