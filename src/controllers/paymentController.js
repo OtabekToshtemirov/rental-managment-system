@@ -32,7 +32,7 @@ exports.createPayment = async (req, res) => {
         // Update customer balance
         const customerData = await Customers.findById(customer);
         if (customerData) {
-            customerData.balance = (customerData.balance || 0) + Number(amount);
+            customerData.balance = (customerData.balance || 0) + Number(amount) + Number(discount);
             await customerData.save();
         }
 
