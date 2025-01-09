@@ -43,19 +43,9 @@ exports.createRental = async (req, res) => {
         // Generate rental number
         let rentalNumber;
         try {
-            // Find the latest rental with a valid rental number
-            const latestRental = await Rental.findOne({
-                rentalNumber: { $type: "string", $regex: /^\d+$/ }
-            }).sort({ rentalNumber: -1 });
-
-            if (latestRental && latestRental.rentalNumber && !isNaN(parseInt(latestRental.rentalNumber))) {
-                // Increment the number
-                const nextNumber = parseInt(latestRental.rentalNumber) + 1;
-                rentalNumber = nextNumber.toString();
-            } else {
-                // If no valid rental number found or if latest is NaN, start from 1
-                rentalNumber = '1';
-            }
+            // Find the length of rentals 
+            const rentals = await Rental.find().sort({ createdAt: -1 });
+            rentalNumber = rentals.length + 1;
         } catch (error) {
             console.error('Error generating rental number:', error);
             return res.status(500).json({ 
@@ -113,6 +103,15 @@ exports.createRental = async (req, res) => {
         // Barcha mahsulotlarni bir vaqtda yangilash
         if (productUpdates.length > 0) {
             await Product.bulkWrite(productUpdates);
+        }
+
+        //ijara mashinasi rentalCount ni bittaga oshirish
+        if (rentalData.car) {
+            const car = await Car.findById(rentalData.car);
+            if (car) {
+                car.rentalCount += 1;
+                await car.save();
+            }
         }
 
         // Create the rental
