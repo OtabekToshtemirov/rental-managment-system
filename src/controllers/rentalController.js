@@ -95,7 +95,10 @@ exports.createRental = async (req, res) => {
             productUpdates.push({
                 updateOne: {
                     filter: { _id: product._id },
-                    update: { $inc: { quantity: -item.quantity } }
+                    update: {
+                         $inc: { quantity: -item.quantity } ,
+                        $inc: { rented: item.quantity }
+                        }
                 }
             });
         }
@@ -420,7 +423,7 @@ exports.returnProduct = async (req, res) => {
             totalReturnAmount += cost;
 
             // Update inventory
-            await Product.findByIdAndUpdate(product, { $inc: { quantity } });
+            await Product.findByIdAndUpdate(product, { $inc: { quantity } , $inc: { rented: -quantity } });
 
             // Add returned product record
             rental.returnedProducts.push({

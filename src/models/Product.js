@@ -55,6 +55,10 @@ const productSchema = new mongoose.Schema(
                 }
             }
         ],
+        rented: {
+            type: Number,
+            default: 0,
+        },
         rentalCount: {
             type: Number,
             default: 0,
