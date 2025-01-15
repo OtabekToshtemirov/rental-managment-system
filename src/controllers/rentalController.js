@@ -410,8 +410,11 @@ exports.returnProduct = async (req, res) => {
 
             const startDate = new Date(borrowedProduct.startDate);
             const calculatedReturnDate = new Date(returnDate);
-            const totalDays = Math.ceil((calculatedReturnDate - startDate) / (1000 * 60 * 60 * 24));
-            const effectiveDays = Math.max(1, totalDays - discountDays);
+            const days = Math.max(
+                1,
+                Math.ceil((calculatedReturnDate - startDate) / (1000 * 60 * 60 * 24))
+            );
+            const effectiveDays = Math.max(1, days - discountDays);
             const cost = effectiveDays * (dailyRate || borrowedProduct.dailyRate) * quantity;
 
             totalReturnAmount += cost;
