@@ -48,11 +48,7 @@ const productSchema = new mongoose.Schema(
                     required: [true, 'Qism mahsulot miqdori kiritilishi shart'],
                     min: [1, 'Qism mahsulot miqdori 1 dan kam bo\'lishi mumkin emas']
                 },
-                dailyRate: {
-                    type: Number,
-                    required: [true, 'Qism mahsulot narxi kiritilishi shart'],
-                    min: [0, 'Qism mahsulot narxi 0 dan kam bo\'lishi mumkin emas']
-                }
+
             }
         ],
         rented: {

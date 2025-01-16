@@ -19,13 +19,26 @@ exports.getAllProducts = async (req, res) => {
     const products = await Product.find()
       .populate({
         path: 'parts.product',
-        select: 'name'
-      })
-    res.json(products)
+        select: 'name dailyRate category'
+      });
+
+    // Har bir mahsulot uchun qismlarini tekshirish
+    const productsWithParts = products.map(product => {
+      if (product.type === 'combo' && product.parts) {
+        // Qismlar ma'lumotlarini to'ldirish
+        product.parts = product.parts.map(part => ({
+          ...part.toObject(),
+          product: part.product || null
+        }));
+      }
+      return product;
+    });
+
+    res.json(productsWithParts);
   } catch (error) {
-    res.status(500).json({ message: error.message })
+    res.status(500).json({ message: error.message });
   }
-}
+};
 
 // Get a product by ID and show associated rentals and customers
 exports.getProductById = async (req, res) => {
@@ -33,17 +46,27 @@ exports.getProductById = async (req, res) => {
     const product = await Product.findById(req.params.id)
       .populate({
         path: 'parts.product',
-        select: 'name'
-      })
-    if (!product) return res.status(404).json({ message: 'Product not found' })
+        select: 'name dailyRate category'
+      });
 
-    const rentals = await Rental.find({ products: req.params.id }).populate(
-      'customer',
-      'name phone',
-    )
-    res.json({ product, rentals })
+    if (!product) {
+      return res.status(404).json({ message: 'Product not found' });
+    }
+
+    // Qismlar ma'lumotlarini tekshirish
+    if (product.type === 'combo' && product.parts) {
+      product.parts = product.parts.map(part => ({
+        ...part.toObject(),
+        product: part.product || null
+      }));
+    }
+
+    const rentals = await Rental.find({ 'borrowedProducts.product': req.params.id })
+      .populate('customer', 'name phone');
+
+    res.json({ product, rentals });
   } catch (error) {
-    res.status(500).json({ message: error.message })
+    res.status(500).json({ message: error.message });
   }
 }
 
@@ -80,7 +103,7 @@ exports.deleteProduct = async (req, res) => {
     }
 
     const activeRentals = await Rental.find({
-      'products.product': product._id,
+      'borrowedProducts.product': product._id,
       status: 'active'
     })
 

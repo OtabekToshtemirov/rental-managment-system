@@ -1,6 +1,23 @@
 const mongoose = require('mongoose');
 const Schema = mongoose.Schema;
 
+const partSchema = new Schema({
+    product: { 
+        type: mongoose.Schema.Types.ObjectId, 
+        ref: "Product", 
+        required: true 
+    },
+    quantity: { 
+        type: Number, 
+        required: true,
+        min: [0, 'Miqdor 0 dan kam bo\'lmasligi kerak']
+    },
+    dailyRate: {
+        type: Number,
+        default: 0
+    }
+});
+
 const borrowedProductSchema = new Schema({
     product: { 
         type: mongoose.Schema.Types.ObjectId, 
@@ -27,7 +44,8 @@ const borrowedProductSchema = new Schema({
     },
     endDate: { 
         type: Date 
-    }
+    },
+    parts: [partSchema]
 });
 
 const returnedProductSchema = new Schema({
@@ -68,7 +86,8 @@ const returnedProductSchema = new Schema({
         type: Number,
         default: 0,
         min: [0, 'Chegirma 0 dan kam bo\'lmasligi kerak']
-    }
+    },
+    parts: [partSchema]
 });
 
 const rentalSchema = new Schema({

@@ -11,164 +11,88 @@ exports.createRental = async (req, res) => {
         const rentalData = req.body;
         console.log('Received rental data:', JSON.stringify(rentalData, null, 2));
 
-        // Muhim maydonlarni tekshirish
-        if (!rentalData.workStartDate) {
-            return res.status(400).json({ message: 'Ish boshlanish sanasi kiritilishi shart' });
+        // Asosiy tekshiruvlar
+        if (!rentalData.workStartDate || !rentalData.customer || 
+            !Array.isArray(rentalData.borrowedProducts) || rentalData.borrowedProducts.length === 0) {
+            return res.status(400).json({ message: 'Barcha maydonlar to\'ldirilishi shart' });
         }
 
-        if (!rentalData.totalCost || isNaN(rentalData.totalCost)) {
-            return res.status(400).json({ message: 'Umumiy summa noto\'g\'ri kiritilgan' });
-        }
+        // Ijara raqamini generatsiya qilish
+        const rentals = await Rental.find().sort({ createdAt: -1 });
+        const rentalNumber = rentals.length + 1;
 
-        // Oldindan to'lov tekshiruvi
-        if (rentalData.prepaidAmount) {
-            const prepaidAmount = parseFloat(rentalData.prepaidAmount);
-            if (isNaN(prepaidAmount) || prepaidAmount < 0) {
-                return res.status(400).json({ message: 'Oldindan to\'lov summasi noto\'g\'ri' });
-            }
-            if (prepaidAmount > rentalData.totalCost) {
-                return res.status(400).json({ message: 'Oldindan to\'lov umumiy summadan oshib ketdi' });
-            }
-        }
-
-        // Basic validation
-        if (!rentalData.customer) {
-            return res.status(400).json({ message: 'Mijoz tanlanishi shart' });
-        }
-
-        if (!Array.isArray(rentalData.borrowedProducts) || rentalData.borrowedProducts.length === 0) {
-            return res.status(400).json({ message: 'Kamida bitta mahsulot tanlash kerak' });
-        }
-
-        // Generate rental number
-        let rentalNumber;
-        try {
-            // Find the length of rentals 
-            const rentals = await Rental.find().sort({ createdAt: -1 });
-            rentalNumber = rentals.length + 1;
-        } catch (error) {
-            console.error('Error generating rental number:', error);
-            return res.status(500).json({ 
-                message: 'Ijara raqamini yaratishda xatolik',
-                details: error.message 
-            });
-        }
-
-        // add prepaid payment if provided
-        if (rentalData.prepaidAmount && parseFloat(rentalData.prepaidAmount) > 0) {
-            const prepaidAmount = parseFloat(rentalData.prepaidAmount);
+        // Mahsulotlarni tekshirish va miqdorlarni yangilash
+        for (const borrowedProduct of rentalData.borrowedProducts) {
+            const product = await Product.findById(borrowedProduct.product);
             
-            const payment = new Payment({
-                customer: rentalData.customer,
-                rental: rental._id,
-                amount: prepaidAmount,
-                paymentType: rentalData.paymentType || 'cash',
-                paymentDate: new Date(),
-                isPrepaid: true,
-                description: 'Oldindan to\'lov'
-            });
-            
-            await payment.save();
-
-            // Qarzni yangilash
-            rental.debt = rental.totalCost - prepaidAmount;
-            rental.payments = [payment._id]; // To'lovlar ro'yxatini saqlash
-            await rental.save();
-        }
-
-        // Har bir mahsulot uchun miqdorini tekshirish va kamaytirish
-        const productUpdates = [];
-        for (const item of rentalData.borrowedProducts) {
-            const product = await Product.findById(item.product);
             if (!product) {
-                return res.status(404).json({ message: `Mahsulot topilmadi: ${item.product}` });
+                return res.status(400).json({ message: `Mahsulot topilmadi: ${borrowedProduct.product}` });
             }
 
-            // Miqdorni tekshirish
-            if (product.quantity < item.quantity) {
+            // Asosiy mahsulot miqdorini tekshirish
+            const availableQuantity = product.quantity - (product.rented || 0);
+            if (availableQuantity < borrowedProduct.quantity) {
                 return res.status(400).json({ 
-                    message: `${product.name} mahsulotidan yetarli miqdor yo'q. Mavjud: ${product.quantity}, So'ralgan: ${item.quantity}` 
+                    message: `${product.name} mahsulotidan ${borrowedProduct.quantity} dona mavjud emas. Faqat ${availableQuantity} dona mavjud.` 
                 });
             }
 
-            // O'zgarishlarni to'plash
-            productUpdates.push({
-                updateOne: {
-                    filter: { _id: product._id },
-                    update: {
-                         $inc: { quantity: -item.quantity } ,
-                        $inc: { rented: item.quantity }
-                        }
+            // Combo mahsulot qismlarini tekshirish
+            if (product.type === 'combo' && Array.isArray(borrowedProduct.parts)) {
+                for (const part of borrowedProduct.parts) {
+                    const partProduct = await Product.findById(part.product);
+                    if (!partProduct) {
+                        return res.status(400).json({ message: `Qism mahsulot topilmadi: ${part.product}` });
+                    }
+
+                    // Qism mahsulot miqdorini tekshirish
+                    const availablePartQuantity = partProduct.quantity - (partProduct.rented || 0);
+                    const requiredQuantity = part.quantity;
+
+                    if (availablePartQuantity < requiredQuantity) {
+                        return res.status(400).json({ 
+                            message: `${partProduct.name} qismidan ${requiredQuantity} dona mavjud emas. Faqat ${availablePartQuantity} dona mavjud.` 
+                        });
+                    }
+
+                    // Qism mahsulot miqdorini yangilash
+                    partProduct.rented = (partProduct.rented || 0) + requiredQuantity;
+                    await partProduct.save();
                 }
-            });
-        }
-
-        // Barcha mahsulotlarni bir vaqtda yangilash
-        if (productUpdates.length > 0) {
-            await Product.bulkWrite(productUpdates);
-        }
-
-        //ijara mashinasi rentalCount ni bittaga oshirish
-        if (rentalData.car) {
-            const car = await Car.findById(rentalData.car);
-            if (car) {
-                car.rentalCount += 1;
-                await car.save();
             }
+
+            // Asosiy mahsulot miqdorini yangilash
+            product.rented = (product.rented || 0) + borrowedProduct.quantity;
+            product.rentalCount = (product.rentalCount || 0) + 1;
+            await product.save();
         }
 
-        // Create the rental
+        // Ijarani saqlash
         const rental = new Rental({
             ...rentalData,
             rentalNumber,
-            workStartDate: new Date(rentalData.workStartDate),
-            borrowedProducts: rentalData.borrowedProducts.map(item => ({
-                ...item,
-                startDate: new Date(rentalData.workStartDate),
-                rentDate: new Date()
-            })),
             status: 'active',
-            createdAt: new Date(),
-            totalCost: Number(rentalData.totalCost || 0),
-            debt: rentalData.debt,
-            description: req.body.description
+            createdAt: new Date()
         });
 
         await rental.save();
 
-        // Populate the rental data
-        const populatedRental = await Rental.findById(rental._id)
-            .populate('customer')
-            .populate({
-                path: 'borrowedProducts.product',
-                populate: {
-                    path: 'parts.product',
-                    model: 'Product',
-                    select: 'name type dailyRate'
-                }
-            })
-            .populate('car');
-
-        res.status(201).json(populatedRental);
-    } catch (error) {
-        console.error('Ijara yaratishda xatolik:', error);
-        
-        let errorMessage = 'Ijarani yaratishda xatolik yuz berdi';
-        let statusCode = 500;
-
-        if (error.name === 'ValidationError') {
-            errorMessage = 'Ma\'lumotlar noto\'g\'ri kiritilgan';
-            statusCode = 400;
-        } else if (error.name === 'MongoError' && error.code === 11000) {
-            errorMessage = 'Bu ijara raqami allaqachon mavjud';
-            statusCode = 409;
+        // Oldindan to'lovni saqlash
+        if (rentalData.prepaidAmount && parseFloat(rentalData.prepaidAmount) > 0) {
+            const payment = new Payment({
+                rental: rental._id,
+                amount: parseFloat(rentalData.prepaidAmount),
+                paymentType: 'cash',
+                description: 'Oldindan to\'lov',
+                createdAt: new Date()
+            });
+            await payment.save();
         }
 
-        res.status(statusCode).json({ 
-            message: errorMessage,
-            error: error.message,
-            details: process.env.NODE_ENV === 'development' ? error.stack : undefined
-        });
+        res.status(201).json(rental);
+    } catch (error) {
+        console.error('Error creating rental:', error);
+        res.status(500).json({ message: error.message });
     }
 };
 
