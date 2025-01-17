@@ -45,16 +45,8 @@ exports.createRental = async (req, res) => {
                         return res.status(400).json({ message: `Qism mahsulot topilmadi: ${part.product}` });
                     }
 
-                    // Qism mahsulot miqdorini tekshirish
-                    const availablePartQuantity = partProduct.quantity - (partProduct.rented || 0);
                     const requiredQuantity = part.quantity;
-
-                    if (availablePartQuantity < requiredQuantity) {
-                        return res.status(400).json({ 
-                            message: `${partProduct.name} qismidan ${requiredQuantity} dona mavjud emas. Faqat ${availablePartQuantity} dona mavjud.` 
-                        });
-                    }
-
+                    
                     // Qism mahsulot miqdorini yangilash
                     partProduct.rented = (partProduct.rented || 0) + requiredQuantity;
                     await partProduct.save();
