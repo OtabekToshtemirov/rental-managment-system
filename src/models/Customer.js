@@ -18,6 +18,9 @@ const customerSchema = new mongoose.Schema(
             enum: ['VIP', 'oddiy', 'bad'],
             default: 'oddiy'
         },
+        description:{
+            type: String,
+        },
         balance: {
             type: Number,
             required: true,

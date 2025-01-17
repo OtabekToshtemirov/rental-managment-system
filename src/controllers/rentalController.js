@@ -337,10 +337,13 @@ exports.returnProduct = async (req, res) => {
 
             const startDate = new Date(borrowedProduct.startDate);
             const calculatedReturnDate = new Date(returnDate);
-            const days = Math.max(
-                1,
-                Math.ceil((calculatedReturnDate - startDate) / (1000 * 60 * 60 * 24))
-            );
+            const calculateDays = (startDate, returnDate) => {
+                const start = new Date(startDate).setHours(0, 0, 0, 0); // Kun boshlanishi
+                const end = new Date(returnDate).setHours(0, 0, 0, 0);   // Kun boshlanishi
+                return Math.max(1, Math.ceil((end - start) / (1000 * 60 * 60 * 24)));
+            };
+            
+            const days = calculateDays(startDate, calculatedReturnDate);
             const effectiveDays = Math.max(1, days - discountDays);
             const cost = effectiveDays * (dailyRate || borrowedProduct.dailyRate) * quantity;
 
@@ -356,7 +359,7 @@ exports.returnProduct = async (req, res) => {
                 startDate,
                 returnDate: calculatedReturnDate,
                 dailyRate: dailyRate || borrowedProduct.dailyRate,
-                discountDays,
+                discount:discountDays,
                 totalCost: cost,
                 days: effectiveDays
             });
