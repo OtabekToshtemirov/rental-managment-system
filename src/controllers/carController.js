@@ -13,7 +13,7 @@ exports.createCar = async (req, res) => {
         if (error.code === 11000) {
             return res.status(400).json({
                 success: false,
-                message: 'Bu mashina raqami yoki davlat raqami allaqachon mavjud'
+                message: 'Бу машина рақами аллақачон мавжуд'
             });
         }
         res.status(400).json({
@@ -26,16 +26,40 @@ exports.createCar = async (req, res) => {
 // Get all cars
 exports.getAllCars = async (req, res) => {
     try {
-        const cars = await Car.find();
+        const cars = await Car.find()
+            .populate({
+                path: 'rentals',
+                populate: {
+                    path: 'customer',
+                    select: 'name phone'
+                }
+            });
+
+        // Separate active and completed rentals
+        const carsWithRentalInfo = cars.map(car => {
+            const carObj = car.toObject();
+            
+            // Filter active and completed rentals
+            carObj.activeRentals = car.rentals.filter(rental => 
+                rental.status === 'active' || rental.status === 'overdue'
+            );
+            
+            carObj.rentalHistory = car.rentals.filter(rental => 
+                rental.status === 'completed'
+            );
+
+            return carObj;
+        });
+
         res.status(200).json({
             success: true,
             count: cars.length,
-            data: cars
+            data: carsWithRentalInfo
         });
     } catch (error) {
         res.status(500).json({
             success: false,
-            message: "Serverda xatolik yuz berdi"
+            message: "Серверда хатолик юз берди"
         });
     }
 };
@@ -46,26 +70,43 @@ exports.getCarById = async (req, res) => {
         if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
             return res.status(400).json({
                 success: false,
-                message: 'Noto\'g\'ri ID formati'
+                message: 'Нотўғри ID формати'
             });
         }
 
-        const car = await Car.findById(req.params.id);
+        const car = await Car.findById(req.params.id)
+            .populate({
+                path: 'rentals',
+                populate: {
+                    path: 'customer',
+                    select: 'name phone'
+                }
+            });
+
         if (!car) {
             return res.status(404).json({
                 success: false,
-                message: 'Mashina topilmadi'
+                message: 'Транспорт топилмади'
             });
         }
 
+        // Separate active and completed rentals
+        const carObj = car.toObject();
+        carObj.activeRentals = car.rentals.filter(rental => 
+            rental.status === 'active' || rental.status === 'overdue'
+        );
+        carObj.rentalHistory = car.rentals.filter(rental => 
+            rental.status === 'completed'
+        );
+
         res.status(200).json({
             success: true,
-            data: car
+            data: carObj
         });
     } catch (error) {
         res.status(500).json({
             success: false,
-            message: "Serverda xatolik yuz berdi"
+            message: "Серверда хатолик юз берди"
         });
     }
 };
@@ -76,34 +117,46 @@ exports.updateCar = async (req, res) => {
         if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
             return res.status(400).json({
                 success: false,
-                message: 'Noto\'g\'ri ID formati'
+                message: 'Нотўғри ID формати'
             });
         }
 
         const car = await Car.findByIdAndUpdate(
             req.params.id,
             req.body,
-            { new: true, runValidators: true }
-        );
+            {
+                new: true,
+                runValidators: true
+            }
+        ).populate({
+            path: 'rentals',
+            populate: {
+                path: 'customer',
+                select: 'name phone'
+            }
+        });
 
         if (!car) {
             return res.status(404).json({
                 success: false,
-                message: 'Mashina topilmadi'
+                message: 'Транспорт топилмади'
             });
         }
 
+        // Separate active and completed rentals
+        const carObj = car.toObject();
+        carObj.activeRentals = car.rentals.filter(rental => 
+            rental.status === 'active' || rental.status === 'overdue'
+        );
+        carObj.rentalHistory = car.rentals.filter(rental => 
+            rental.status === 'completed'
+        );
+
         res.status(200).json({
             success: true,
-            data: car
+            data: carObj
         });
     } catch (error) {
-        if (error.code === 11000) {
-            return res.status(400).json({
-                success: false,
-                message: 'Bu mashina raqami yoki davlat raqami allaqachon mavjud'
-            });
-        }
         res.status(400).json({
             success: false,
             message: error.message
@@ -117,24 +170,41 @@ exports.deleteCar = async (req, res) => {
         if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
             return res.status(400).json({
                 success: false,
-                message: 'Noto\'g\'ri ID formati'
+                message: 'Нотўғри ID формати'
             });
         }
 
         const car = await Car.findById(req.params.id);
+
         if (!car) {
             return res.status(404).json({
                 success: false,
-                message: 'Mashina topilmadi'
+                message: 'Транспорт топилмади'
             });
         }
 
-        await car.deleteOne();
-        res.status(204).send();
+        // Check if car has active rentals
+        const hasActiveRentals = car.rentals.some(rental => 
+            rental.status === 'active' || rental.status === 'overdue'
+        );
+
+        if (hasActiveRentals) {
+            return res.status(400).json({
+                success: false,
+                message: 'Фаол ижаралари бор транспортни ўчириб бўлмайди'
+            });
+        }
+
+        await car.remove();
+
+        res.status(200).json({
+            success: true,
+            data: {}
+        });
     } catch (error) {
         res.status(500).json({
             success: false,
-            message: error.message
+            message: "Серверда хатолик юз берди"
         });
     }
 };
@@ -144,26 +214,37 @@ exports.getTopRentedCars = async (req, res) => {
     try {
         const limit = parseInt(req.query.limit) || 10;
         
-        if (limit < 1) {
-            return res.status(400).json({
-                success: false,
-                message: 'Limit 1 dan katta bo\'lishi kerak'
-            });
-        }
-
         const cars = await Car.find()
             .sort({ rentalCount: -1 })
-            .limit(limit);
+            .limit(limit)
+            .populate({
+                path: 'rentals',
+                populate: {
+                    path: 'customer',
+                    select: 'name phone'
+                }
+            });
+
+        const carsWithRentalInfo = cars.map(car => {
+            const carObj = car.toObject();
+            carObj.activeRentals = car.rentals.filter(rental => 
+                rental.status === 'active' || rental.status === 'overdue'
+            );
+            carObj.rentalHistory = car.rentals.filter(rental => 
+                rental.status === 'completed'
+            );
+            return carObj;
+        });
 
         res.status(200).json({
             success: true,
             count: cars.length,
-            data: cars
+            data: carsWithRentalInfo
         });
     } catch (error) {
         res.status(500).json({
             success: false,
-            message: "Serverda xatolik yuz berdi"
+            message: "Серверда хатолик юз берди"
         });
     }
 };
@@ -171,22 +252,32 @@ exports.getTopRentedCars = async (req, res) => {
 // Update car rental count
 exports.updateCarRental = async (req, res) => {
     try {
-        if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+        const { carId, rentalId, action } = req.body;
+
+        if (!mongoose.Types.ObjectId.isValid(carId)) {
             return res.status(400).json({
                 success: false,
-                message: 'Noto\'g\'ri ID formati'
+                message: 'Нотўғри транспорт ID формати'
             });
         }
 
-        const car = await Car.findById(req.params.id);
+        const car = await Car.findById(carId);
+
         if (!car) {
             return res.status(404).json({
                 success: false,
-                message: 'Mashina topilmadi'
+                message: 'Транспорт топилмади'
             });
         }
 
-        car.rentalCount = (car.rentalCount || 0) + 1;
+        if (action === 'add') {
+            car.rentalCount += 1;
+            car.rentals.push(rentalId);
+        } else if (action === 'remove') {
+            car.rentalCount = Math.max(0, car.rentalCount - 1);
+            car.rentals = car.rentals.filter(rental => rental.toString() !== rentalId);
+        }
+
         await car.save();
 
         res.status(200).json({
@@ -194,9 +285,9 @@ exports.updateCarRental = async (req, res) => {
             data: car
         });
     } catch (error) {
-        res.status(400).json({
+        res.status(500).json({
             success: false,
-            message: error.message
+            message: "Серверда хатолик юз берди"
         });
     }
 };
@@ -277,7 +368,7 @@ exports.getCarStatistics = async (req, res) => {
     } catch (error) {
         res.status(500).json({
             success: false,
-            message: "Serverda xatolik yuz berdi"
+            message: "Серверда хатолик юз берди"
         });
     }
 };

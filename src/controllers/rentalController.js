@@ -49,6 +49,7 @@ exports.createRental = async (req, res) => {
                     
                     // Qism mahsulot miqdorini yangilash
                     partProduct.rented = (partProduct.rented || 0) + requiredQuantity;
+                    partProduct.quantity = Math.max(0, partProduct.quantity - requiredQuantity); // Maxsulot sonini kamaytirish
                     await partProduct.save();
                 }
             }
@@ -341,8 +342,41 @@ exports.returnProduct = async (req, res) => {
 
             totalReturnAmount += cost;
 
-            // Update inventory
-            await Product.findByIdAndUpdate(product, { $inc: { quantity } , $inc: { rented: -quantity } });
+            // Qaytarilgan mahsulotlarni saqlash
+            for (const returnedProduct of returnedProducts) {
+                const product = await Product.findById(returnedProduct.product);
+                if (!product) {
+                    return res.status(400).json({ message: `Mahsulot topilmadi: ${returnedProduct.product}` });
+                }
+
+                // Asosiy mahsulot miqdorini yangilash
+                product.rented = Math.max(0, (product.rented || 0) - returnedProduct.quantity);
+                await product.save();
+
+                // Combo mahsulot qismlarini yangilash
+                if (product.type === 'combo') {
+                    // Rental dan combo mahsulot qismlarini olish
+                    const borrowedProduct = rental.borrowedProducts.find(
+                        bp => bp.product.toString() === returnedProduct.product.toString()
+                    );
+
+                    if (borrowedProduct && borrowedProduct.parts) {
+                        for (const part of borrowedProduct.parts) {
+                            const partProduct = await Product.findById(part.product);
+                            if (!partProduct) {
+                                console.log(`Qism mahsulot topilmadi: ${part.product}`);
+                                continue;
+                            }
+
+                            // Qism mahsulot miqdorini yangilash
+                            partProduct.rented = Math.max(0, (partProduct.rented || 0) - part.quantity);
+                            partProduct.quantity = partProduct.quantity + part.quantity;
+                            console.log(`Qism qaytarildi: ${partProduct.name}, Miqdor: ${part.quantity}`);
+                            await partProduct.save();
+                        }
+                    }
+                }
+            }
 
             // Add returned product record
             rental.returnedProducts.push({
@@ -589,5 +623,195 @@ exports.deleteRental = async (req, res) => {
         res.status(200).json({ message: 'Ijara o‘chirildi' });
     } catch (error) {
         res.status(500).json({ message: 'Ijara o‘chirishda xatolik yuz berdi', error });
+    }
+};
+
+// Mahsulotlarni qaytarish
+exports.returnProduct = async (req, res) => {
+    try {
+        const { rentalId } = req.params;
+        const { products: returnedProducts } = req.body;
+
+        if (!Array.isArray(returnedProducts) || returnedProducts.length === 0) {
+            return res.status(400).json({ message: 'No products to process for return' });
+        }
+
+        const rental = await Rental.findById(rentalId);
+        if (!rental) return res.status(404).json({ message: 'Rental not found' });
+
+        let totalReturnAmount = 0;
+
+        // Validate all products first
+        for (const item of returnedProducts) {
+            const { product, quantity } = item;
+            
+            // Find borrowed product
+            const borrowedProduct = rental.borrowedProducts.find(
+                bp => bp.product.toString() === product
+            );
+            if (!borrowedProduct) {
+                throw new Error(`Product ${product} not found in rental`);
+            }
+
+            // Calculate total returned quantity including this return
+            const alreadyReturnedQuantity = rental.returnedProducts
+                .filter(rp => rp.product.toString() === product)
+                .reduce((sum, rp) => sum + rp.quantity, 0);
+
+            // Check if return quantity exceeds remaining quantity
+            const remainingQuantity = borrowedProduct.quantity - alreadyReturnedQuantity;
+            if (quantity > remainingQuantity) {
+                throw new Error(`Cannot return more than borrowed quantity for product ${product}. Remaining: ${remainingQuantity}, Attempted: ${quantity}`);
+            }
+        }
+
+        // Process returns after validation
+        for (const item of returnedProducts) {
+            const { product, quantity, returnDate, discountDays = 0, dailyRate } = item;
+
+            const borrowedProduct = rental.borrowedProducts.find(
+                bp => bp.product.toString() === product
+            );
+
+            const startDate = new Date(borrowedProduct.startDate);
+            const calculatedReturnDate = new Date(returnDate);
+            const calculateDays = (startDate, returnDate) => {
+                const start = new Date(startDate).setHours(0, 0, 0, 0); // Kun boshlanishi
+                const end = new Date(returnDate).setHours(0, 0, 0, 0);   // Kun boshlanishi
+                return Math.max(1, Math.ceil((end - start) / (1000 * 60 * 60 * 24)));
+            };
+            
+            const days = calculateDays(startDate, calculatedReturnDate);
+            const effectiveDays = Math.max(1, days - discountDays);
+            const cost = effectiveDays * (dailyRate || borrowedProduct.dailyRate) * quantity;
+
+            totalReturnAmount += cost;
+
+            // Qaytarilgan mahsulotlarni saqlash
+            for (const returnedProduct of returnedProducts) {
+                const product = await Product.findById(returnedProduct.product);
+                if (!product) {
+                    return res.status(400).json({ message: `Mahsulot topilmadi: ${returnedProduct.product}` });
+                }
+
+                // Asosiy mahsulot miqdorini yangilash
+                product.rented = Math.max(0, (product.rented || 0) - returnedProduct.quantity);
+                await product.save();
+
+                // Combo mahsulot qismlarini yangilash
+                if (product.type === 'combo') {
+                    // Rental dan combo mahsulot qismlarini olish
+                    const borrowedProduct = rental.borrowedProducts.find(
+                        bp => bp.product.toString() === returnedProduct.product.toString()
+                    );
+
+                    if (borrowedProduct && borrowedProduct.parts) {
+                        for (const part of borrowedProduct.parts) {
+                            const partProduct = await Product.findById(part.product);
+                            if (!partProduct) {
+                                console.log(`Qism mahsulot topilmadi: ${part.product}`);
+                                continue;
+                            }
+
+                            // Qism mahsulot miqdorini yangilash
+                            partProduct.rented = Math.max(0, (partProduct.rented || 0) - part.quantity);
+                            partProduct.quantity = partProduct.quantity + part.quantity;
+                            console.log(`Qism qaytarildi: ${partProduct.name}, Miqdor: ${part.quantity}`);
+                            await partProduct.save();
+                        }
+                    }
+                }
+            }
+
+            // Add returned product record
+            rental.returnedProducts.push({
+                product,
+                quantity,
+                startDate,
+                returnDate: calculatedReturnDate,
+                dailyRate: dailyRate || borrowedProduct.dailyRate,
+                discount:discountDays,
+                totalCost: cost,
+                days: effectiveDays
+            });
+        }
+
+        // Update rental total cost and discount
+        rental.totalCost = (rental.totalCost || 0) + totalReturnAmount;
+        rental.totalDiscount = rental.totalDiscount || 0;
+
+        // Update customer balance
+        const customer = await Customer.findById(rental.customer);
+        if (customer) {
+            customer.balance = (customer.balance || 0) - totalReturnAmount;
+            await customer.save();
+        }
+
+        // Check if all products are returned
+        const allReturned = rental.borrowedProducts.every(bp => {
+            const returnedQty = rental.returnedProducts
+                .filter(rp => rp.product.toString() === bp.product.toString())
+                .reduce((sum, rp) => sum + rp.quantity, 0);
+            return returnedQty >= bp.quantity;
+        });
+
+        if (allReturned) {
+            rental.status = 'completed';
+            rental.endDate = new Date();
+        }
+
+        await rental.save();
+
+        res.status(200).json({
+            message: 'Products returned successfully',
+            rental,
+            totalReturnAmount
+        });
+    } catch (error) {
+        console.error('Return process error:', error);
+        res.status(500).json({ message: error.message || 'Error during return process' });
+    }
+};
+
+// Get today's rental statistics
+exports.getTodayStatistics = async (req, res) => {
+    try {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        const tomorrow = new Date(today);
+        tomorrow.setDate(tomorrow.getDate() + 1);
+
+        const stats = await Rental.aggregate([
+            {
+                $match: {
+                    createdAt: {
+                        $gte: today,
+                        $lt: tomorrow
+                    },
+                    status: { $ne: 'cancelled' }
+                }
+            },
+            {
+                $group: {
+                    _id: null,
+                    totalRentals: { $sum: 1 },
+                    totalAmount: { $sum: "$totalAmount" }
+                }
+            }
+        ]);
+
+        const statistics = stats.length > 0 ? stats[0] : { totalRentals: 0, totalAmount: 0 };
+        
+        res.status(200).json({
+            success: true,
+            data: statistics
+        });
+    } catch (error) {
+        console.error('Error in getTodayStatistics:', error);
+        res.status(500).json({
+            success: false,
+            message: "Serverda xatolik yuz berdi"
+        });
     }
 };
