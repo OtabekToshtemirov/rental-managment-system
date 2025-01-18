@@ -59,6 +59,13 @@ exports.createRental = async (req, res) => {
             product.rentalCount = (product.rentalCount || 0) + 1;
             await product.save();
         }
+        // mashinani rentalCountini 1 ga oshirish
+        const car = await Car.findById (rentalData.car);
+        if  (car) {
+            car.rentalCount = (car.rentalCount || 0) + 1;
+            await car.save();
+        }
+        
 
         // Ijarani saqlash
         const rental = new Rental({
@@ -73,6 +80,7 @@ exports.createRental = async (req, res) => {
         // Oldindan to'lovni saqlash
         if (rentalData.prepaidAmount && parseFloat(rentalData.prepaidAmount) > 0) {
             const payment = new Payment({
+                customer: rental.customer,
                 rental: rental._id,
                 amount: parseFloat(rentalData.prepaidAmount),
                 paymentType: 'cash',
@@ -328,7 +336,8 @@ exports.returnProduct = async (req, res) => {
                 bp => bp.product.toString() === product
             );
 
-            const startDate = new Date(borrowedProduct.startDate);
+            const startDate = new Date(rental.workStartDate);
+            console.log('Start date:', startDate);
             const calculatedReturnDate = new Date(returnDate);
             const calculateDays = (startDate, returnDate) => {
                 const start = new Date(startDate).setHours(0, 0, 0, 0); // Kun boshlanishi
@@ -737,7 +746,6 @@ exports.returnProduct = async (req, res) => {
         }
 
         // Update rental total cost and discount
-        rental.totalCost = (rental.totalCost || 0) + totalReturnAmount;
         rental.totalDiscount = rental.totalDiscount || 0;
 
         // Update customer balance
