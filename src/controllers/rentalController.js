@@ -337,7 +337,6 @@ exports.returnProduct = async (req, res) => {
             );
 
             const startDate = new Date(rental.workStartDate);
-            console.log('Start date:', startDate);
             const calculatedReturnDate = new Date(returnDate);
             const calculateDays = (startDate, returnDate) => {
                 const start = new Date(startDate).setHours(0, 0, 0, 0); // Kun boshlanishi
@@ -401,7 +400,6 @@ exports.returnProduct = async (req, res) => {
         }
 
         // Update rental total cost and discount
-        rental.totalCost = (rental.totalCost || 0) + totalReturnAmount;
         rental.totalDiscount = rental.totalDiscount || 0;
 
         // Update customer balance
@@ -617,7 +615,6 @@ exports.editRental = async (req, res) => {
     }
 };
 
-
 // Ijara o'chirish
 exports.deleteRental = async (req, res) => {
     try {
@@ -682,7 +679,7 @@ exports.returnProduct = async (req, res) => {
                 bp => bp.product.toString() === product
             );
 
-            const startDate = new Date(borrowedProduct.startDate);
+            const startDate = new Date(rental.workStartDate);
             const calculatedReturnDate = new Date(returnDate);
             const calculateDays = (startDate, returnDate) => {
                 const start = new Date(startDate).setHours(0, 0, 0, 0); // Kun boshlanishi
