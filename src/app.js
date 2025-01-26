@@ -17,7 +17,10 @@ const path = require('path')
 const port = PORT || 5000
 const app = express()
 
-app.use(cors({ origin: "https://ijarafrontreact.vercel.app/" }));
+app.use(cors({
+  origin: "https://ijarafrontreact.vercel.app", // Ruxsat berilgan domen
+  credentials: true // Agar cookie yoki header ishlatsa
+}));
 app.use(express.json())
 app.use(express.urlencoded({ extended: true }))
 app.use(morgan())
