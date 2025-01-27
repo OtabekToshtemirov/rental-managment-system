@@ -18,8 +18,9 @@ const port = PORT || 5000
 const app = express()
 
 const allowedOrigins = [
+  "https://ijarafrontreact.vercel.app",
   "https://ijarafrontreact-git-main-otabektoshtemirovs-projects.vercel.app",
-  "https://ijarafrontreact-ja1il87ob-otabektoshtemirovs-projects.vercel.app"
+  "https://ijarafrontreact-osr637yja-otabektoshtemirovs-projects.vercel.app"
 ];
 
 app.use(cors({
