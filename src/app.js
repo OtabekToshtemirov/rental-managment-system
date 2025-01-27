@@ -17,10 +17,22 @@ const path = require('path')
 const port = PORT || 5000
 const app = express()
 
+const allowedOrigins = [
+  "https://ijarafrontreact-git-main-otabektoshtemirovs-projects.vercel.app",
+  "https://ijarafrontreact-ja1il87ob-otabektoshtemirovs-projects.vercel.app"
+];
+
 app.use(cors({
-  origin: "https://ijarafrontreact-git-main-otabektoshtemirovs-projects.vercel.app/", // Ruxsat berilgan domen
-  credentials: true // Agar cookie yoki header ishlatsa
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error("Not allowed by CORS"));
+    }
+  },
+  credentials: true
 }));
+
 app.use(express.json())
 app.use(express.urlencoded({ extended: true }))
 app.use(morgan())
