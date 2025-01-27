@@ -18,7 +18,7 @@ const port = PORT || 5000
 const app = express()
 
 app.use(cors({
-  origin: "https://ijarafrontreact.vercel.app", // Ruxsat berilgan domen
+  origin: "https://ijarafrontreact-git-main-otabektoshtemirovs-projects.vercel.app/", // Ruxsat berilgan domen
   credentials: true // Agar cookie yoki header ishlatsa
 }));
 app.use(express.json())
