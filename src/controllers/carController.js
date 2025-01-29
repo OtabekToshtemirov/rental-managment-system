@@ -174,35 +174,20 @@ exports.deleteCar = async (req, res) => {
             });
         }
 
-        const car = await Car.findById(req.params.id);
-
+        const car = await Car.findByIdAndDelete(req.params.id);
         if (!car) {
             return res.status(404).json({
                 success: false,
-                message: 'Транспорт топилмади'
+                message: 'Машина топilmади'
             });
         }
-
-        // Check if car has active rentals
-        const hasActiveRentals = car.rentals.some(rental => 
-            rental.status === 'active' || rental.status === 'overdue'
-        );
-
-        if (hasActiveRentals) {
-            return res.status(400).json({
-                success: false,
-                message: 'Фаол ижаралари бор транспортни ўчириб бўлмайди'
-            });
-        }
-
-        await car.remove();
 
         res.status(200).json({
             success: true,
             data: {}
         });
     } catch (error) {
-        res.status(500).json({
+        res.send(error).status(500).json({
             success: false,
             message: "Серверда хатолик юз берди"
         });
