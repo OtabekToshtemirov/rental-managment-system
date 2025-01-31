@@ -92,9 +92,10 @@ const returnedProductSchema = new Schema({
 
 const rentalSchema = new Schema({
     rentalNumber: {
-        type: String,
-        required: [true, 'Ijara raqami kiritilishi shart'],
-        unique: true
+        type: Number,
+        required: true,
+        unique: true,
+        index: true
     },
     customer: {
         type: mongoose.Schema.Types.ObjectId,

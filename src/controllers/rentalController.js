@@ -3,6 +3,7 @@ const Product = require('../models/Product');
 const Car = require('../models/Car');
 const Customer = require('../models/Customer');
 const Payment = require('../models/Payments');
+const Counter = require('../models/Counter');
 const moment = require('moment');
 
 // Mahsulot ijaraga olish
@@ -18,8 +19,26 @@ exports.createRental = async (req, res) => {
         }
 
         // Ijara raqamini generatsiya qilish
-        const rentals = await Rental.find().sort({ createdAt: -1 });
-        const rentalNumber = rentals.length + 1;
+        let counter = await Counter.findOne({ _id: 'rentalNumber' });
+        
+        if (!counter) {
+            // Eng katta ijara raqamini topish
+            const maxRental = await Rental.findOne({}).sort({ rentalNumber: -1 });
+            const startSeq = maxRental ? Math.max(maxRental.rentalNumber, 19) : 19;
+            
+            counter = await Counter.create({
+                _id: 'rentalNumber',
+                seq: startSeq
+            });
+        }
+        
+        counter = await Counter.findByIdAndUpdate(
+            'rentalNumber',
+            { $inc: { seq: 1 } },
+            { new: true }
+        );
+        
+        const rentalNumber = counter.seq;
 
         // Mahsulotlarni tekshirish va miqdorlarni yangilash
         for (const borrowedProduct of rentalData.borrowedProducts) {
