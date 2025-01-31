@@ -485,17 +485,25 @@ exports.getRentalById = async (req, res) => {
 // Aktiv ijaralarni olish
 exports.getActiveRentals = async (req, res) => {
     try {
-        const rentals = await Rental.find({ status: 'active' }).populate('customer car');
+        const rentals = await Rental.find({ status: 'active' })
+            .populate('customer')
+            .populate('car')
+            .populate('borrowedProducts.product')
+            .populate('borrowedProducts.parts.product')
+            .populate('returnedProducts.product')
+            .populate('returnedProducts.parts.product')
+            
         res.json(rentals);
     } catch (error) {
-        res.status(500).json({ message: 'Aktiv ijaralarni olishda xatolik yuz berdi', error });
+        console.error('Error in getActiveRentals:', error);
+        res.status(500).json({ message: 'Aktiv ijaralarni olishda xatolik yuz berdi', error: error.message });
     }
 };
 
 // Tamomlangan ijaralarni olish
 exports.getCompleteRentals = async (req, res) => {
     try {
-        const rentals = await Rental.find({ status: 'complete' }).populate('customer car');
+        const rentals = await Rental.find({ status: 'complete'}).populate('customer car');
         res.json(rentals);
     } catch (error) {
         res.status(500).json({ message: 'Tamamlangan ijaralarni olishda xatolik yuz berdi', error });
@@ -550,17 +558,13 @@ exports.getRentalsByProductId = async (req, res) => {
 
 exports.editRental = async (req, res) => {
     try {
-        const { borrowedProducts, startDate, endDate, car } = req.body;
+        const { borrowedProducts, startDate, endDate, car, ...otherFields } = req.body;
         const rentalId = req.params.id;
 
-        // Ijarani topamiz
         const rental = await Rental.findById(rentalId).populate('borrowedProducts.product');
+        if (!rental) return res.status(404).json({ message: 'Ijara topilmadi' });
 
-        if (!rental) {
-            return res.status(404).json({ message: 'Ijara topilmadi' });
-        }
-
-        // Oldingi mahsulotlarni qaytarish va zaxirani yangilash
+        // Revert old borrowed products
         for (let item of rental.borrowedProducts) {
             const product = await Product.findById(item.product);
             const newQuantity = product.quantity + item.quantity;
@@ -574,44 +578,45 @@ exports.editRental = async (req, res) => {
             );
         }
 
-        // Yangi mahsulotlarni qo'shamiz
         let totalCost = 0;
-
-        for (let item of borrowedProducts) {
-            const product = await Product.findById(item.product);
-
-            if (!product || product.quantity < item.quantity) {
-                return res.status(400).json({
-                    message: `Mahsulot mavjud emas yoki yetarli miqdorda emas: ${product.name}`,
-                });
+        if (borrowedProducts) {
+            for (let item of borrowedProducts) {
+                const product = await Product.findById(item.product);
+                if (!product || product.quantity < item.quantity) {
+                    return res.status(400).json({
+                        message: `Mahsulot mavjud emas yoki yetarli miqdorda emas: ${product?.name}`,
+                    });
+                }
+                const newQuantity = product.quantity - item.quantity;
+                await Product.findByIdAndUpdate(
+                    item.product,
+                    { 
+                        quantity: newQuantity,
+                        isAvailable: newQuantity > 0 
+                    },
+                    { new: true }
+                );
+                const days = Math.ceil((new Date(item.endDate) - new Date(item.startDate)) / (1000 * 60 * 60 * 24));
+                totalCost += product.dailyRate * days * item.quantity;
             }
-
-            const newQuantity = product.quantity - item.quantity;
-            await Product.findByIdAndUpdate(
-                item.product,
-                { 
-                    quantity: newQuantity,
-                    isAvailable: newQuantity > 0 
-                },
-                { new: true }
-            );
-
-            const days = Math.ceil((new Date(item.endDate) - new Date(item.startDate)) / (1000 * 60 * 60 * 24));
-            totalCost += product.dailyRate * days * item.quantity;
+            rental.borrowedProducts = borrowedProducts;
+            rental.totalCost = totalCost;
+            rental.debt = totalCost;
         }
 
-        // Ijarani yangilaymiz
-        rental.borrowedProducts = borrowedProducts;
         rental.startDate = startDate || rental.startDate;
         rental.endDate = endDate || rental.endDate;
         rental.car = car || rental.car;
-        rental.totalCost = totalCost;
-        rental.debt = totalCost; // Update debt
+
+        // Update remaining fields
+        for (let key in otherFields) {
+            rental[key] = otherFields[key];
+        }
 
         await rental.save();
-        res.status(200).json({ message: 'Ijara muvaffaqiyatli yangilandi', rental });
+        return res.status(200).json({ message: 'Ijara muvaffaqiyatli yangilandi', rental });
     } catch (error) {
-        res.status(500).json({ message: 'Ijara yangilashda xatolik yuz berdi', error });
+        return res.status(500).json({ message: 'Ijara yangilashda xatolik yuz berdi', error });
     }
 };
 
@@ -619,16 +624,67 @@ exports.editRental = async (req, res) => {
 exports.deleteRental = async (req, res) => {
     try {
         const { id } = req.params;
-
-        const rental = await Rental.findByIdAndDelete(id);
+        const rental = await Rental.findById(id)
+            .populate({
+                path: 'borrowedProducts.product',
+                populate: {
+                    path: 'parts.product',
+                    model: 'Product'
+                }
+            });
 
         if (!rental) {
             return res.status(404).json({ message: 'Ijara topilmadi' });
         }
 
-        res.status(200).json({ message: 'Ijara o‘chirildi' });
+        // Revert borrowed products
+        for (let item of rental.borrowedProducts) {
+            const product = await Product.findById(item.product);
+            if (product) {
+                // Asosiy mahsulot miqdorini qaytarish
+                const newQuantity = product.quantity + item.quantity;
+                const newRentalCount = Math.max(0, (product.rented || 0) - item.quantity);
+                await Product.findByIdAndUpdate(
+                    item.product,
+                    { 
+                        quantity: newQuantity,
+                        rented: newRentalCount,
+                        isAvailable: true 
+                    },
+                    { new: true }
+                );
+
+                // Agar combo mahsulot bo'lsa, qismlarni ham qaytarish
+                if (product.type === 'combo' && item.parts && item.parts.length > 0) {
+                    for (const part of item.parts) {
+                        const partProduct = await Product.findById(part.product);
+                        if (partProduct) {
+                            const partNewQuantity = partProduct.quantity + part.quantity;
+                            const partNewRented = Math.max(0, (partProduct.rented || 0) - part.quantity);
+                            
+                            await Product.findByIdAndUpdate(
+                                part.product,
+                                {
+                                    quantity: partNewQuantity,
+                                    rented: partNewRented,
+                                    isAvailable: true
+                                },
+                                { new: true }
+                            );
+                        }
+                    }
+                }
+            }
+        }
+
+        await Rental.findByIdAndDelete(id);
+        return res.status(200).json({ message: 'Ijara muvaffaqiyatli o\'chirildi' });
     } catch (error) {
-        res.status(500).json({ message: 'Ijara o‘chirishda xatolik yuz berdi', error });
+        console.error('Ijara o\'chirishda xatolik:', error);
+        return res.status(500).json({ 
+            message: 'Ijara o\'chirishda xatolik yuz berdi', 
+            error: error.message 
+        });
     }
 };
 
