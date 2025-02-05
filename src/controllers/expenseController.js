@@ -34,7 +34,6 @@ exports.getAllExpenses = async (req, res) => {
         
         const query = {};
         
-        // Add date filter if provided
         if (startDate && endDate) {
             query.date = {
                 $gte: new Date(startDate),
@@ -42,18 +41,16 @@ exports.getAllExpenses = async (req, res) => {
             };
         }
         
-        // Add category filter if provided
-        if (category) {
+        if (category && category !== 'all') {
             query.category = category;
         }
         
-        // Add payment method filter if provided
-        if (paymentMethod) {
+        if (paymentMethod && paymentMethod !== 'all') {
             query.paymentMethod = paymentMethod;
         }
 
         const expenses = await Expense.find(query)
-            .sort({ "timestamp": 1 });
+            .sort({ date: -1, createdAt: -1 });
             
         res.json(expenses);
     } catch (error) {

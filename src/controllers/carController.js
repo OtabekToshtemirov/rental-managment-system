@@ -33,7 +33,7 @@ exports.getAllCars = async (req, res) => {
                     path: 'customer',
                     select: 'name phone'
                 }
-            });
+            }).sort({ name: 1 });
 
         // Separate active and completed rentals
         const carsWithRentalInfo = cars.map(car => {

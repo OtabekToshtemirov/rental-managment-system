@@ -20,7 +20,7 @@ exports.createCustomer = async (req, res) => {
 // Get all customers
 exports.getAllCustomers = async (req, res) => {
   try {
-    const customers = await Customer.find()
+    const customers = await Customer.find().sort({ name: 1 })
     res.json(customers)
   } catch (error) {
     res.status(500).json({ message: "Serverda xatolik yuz berdi", error: error.message })

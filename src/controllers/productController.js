@@ -20,12 +20,11 @@ exports.getAllProducts = async (req, res) => {
       .populate({
         path: 'parts.product',
         select: 'name dailyRate category'
-      });
+      })
+      .sort({ name: 1 }); // Sort by name in ascending order
 
-    // Har bir mahsulot uchun qismlarini tekshirish
     const productsWithParts = products.map(product => {
       if (product.type === 'combo' && product.parts) {
-        // Qismlar ma'lumotlarini to'ldirish
         product.parts = product.parts.map(part => ({
           ...part.toObject(),
           product: part.product || null
