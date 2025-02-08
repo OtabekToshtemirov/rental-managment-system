@@ -577,7 +577,7 @@ exports.getRentalsByProductId = async (req, res) => {
 
 exports.editRental = async (req, res) => {
     try {
-        const { borrowedProducts, workStartDate, endDate, car, ...otherFields } = req.body;
+        const { borrowedProducts, startDate, endDate, car, ...otherFields } = req.body;
         const rentalId = req.params.id;
 
         const rental = await Rental.findById(rentalId).populate('borrowedProducts.product');
@@ -589,11 +589,11 @@ exports.editRental = async (req, res) => {
             const newQuantity = product.quantity + item.quantity;
             await Product.findByIdAndUpdate(
                 item.product,
-                {
+                { 
                     quantity: newQuantity,
-                    rented: Math.max(0, (product.rented || 0) - item.quantity),
-                    isAvailable: newQuantity > 0
-                } 
+                    isAvailable: true 
+                },
+                { new: true }
             );
         }
 
@@ -624,7 +624,7 @@ exports.editRental = async (req, res) => {
             rental.debt = totalCost;
         }
 
-        rental.workStartDate = workStartDate || rental.workStartDate;
+        rental.startDate = startDate || rental.startDate;
         rental.endDate = endDate || rental.endDate;
         rental.car = car || rental.car;
 
