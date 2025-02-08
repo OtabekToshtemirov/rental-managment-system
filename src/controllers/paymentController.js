@@ -7,7 +7,7 @@ const moment = require('moment')
 exports.createPayment = async (req, res) => {
     try {
         console.log('Payment request body:', req.body);
-        const { rental, customer, amount, paymentType = 'cash', discount = 0, description } = req.body;
+        const { rental, customer, amount, paymentType = 'cash', discount = 0, description, memo } = req.body;
 
         if (!customer) {
             return res.status(400).json({ message: 'Customer ID is required' });
@@ -23,7 +23,7 @@ exports.createPayment = async (req, res) => {
             amount: Number(amount),
             paymentType,
             discount: Number(discount),
-            description,
+            description: description || memo, // Accept either description or memo
             paymentDate: new Date(),
         });
 
@@ -110,10 +110,13 @@ exports.updatePayment = async (req, res) => {
         customer.balance -= oldPayment.amount; // Remove old amount
         customer.balance += req.body.amount; // Add new amount
         
-        // Update payment
+        // Update payment with description
         const payment = await Payments.findByIdAndUpdate(
             req.params.id, 
-            req.body,
+            {
+                ...req.body,
+                description: req.body.description || req.body.memo // Accept either description or memo
+            },
             { new: true }
         );
         

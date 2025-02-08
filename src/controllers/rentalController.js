@@ -611,6 +611,7 @@ exports.editRental = async (req, res) => {
                     item.product,
                     { 
                         quantity: newQuantity,
+                        rented: (product.rented || 0) + item.quantity,
                         isAvailable: newQuantity > 0 
                     },
                     { new: true }
