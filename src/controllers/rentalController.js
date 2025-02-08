@@ -578,6 +578,17 @@ exports.getRentalsByProductId = async (req, res) => {
 exports.editRental = async (req, res) => {
     try {
         const { borrowedProducts, startDate, endDate, car, ...otherFields } = req.body;
+
+        if (otherFields.customer === '') {
+            otherFields.customer = null;
+        }
+        if (otherFields.totalCost !== undefined) {
+            otherFields.totalCost = Number(otherFields.totalCost) || 0;
+        }
+        if (otherFields.debt !== undefined) {
+            otherFields.debt = Number(otherFields.debt) || 0;
+        }
+
         const rentalId = req.params.id;
 
         const rental = await Rental.findById(rentalId).populate('borrowedProducts.product');
