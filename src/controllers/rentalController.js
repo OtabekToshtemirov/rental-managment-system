@@ -313,11 +313,11 @@ exports.returnProduct = async (req, res) => {
         const { products: returnedProducts } = req.body;
 
         if (!Array.isArray(returnedProducts) || returnedProducts.length === 0) {
-            return res.status(400).json({ message: 'No products to process for return' });
+            return res.status(400).json({ message: 'Қайтариладиган маҳсулотлар топилмади' });
         }
 
         const rental = await Rental.findById(rentalId);
-        if (!rental) return res.status(404).json({ message: 'Rental not found' });
+        if (!rental) return res.status(404).json({ message: 'Ижара топилмади' });
 
         let totalReturnAmount = 0;
 
@@ -325,23 +325,20 @@ exports.returnProduct = async (req, res) => {
         for (const item of returnedProducts) {
             const { product, quantity } = item;
             
-            // Find borrowed product
             const borrowedProduct = rental.borrowedProducts.find(
                 bp => bp.product.toString() === product
             );
             if (!borrowedProduct) {
-                throw new Error(`Product ${product} not found in rental`);
+                throw new Error(`Маҳсулот ${product} ижарада топилмади`);
             }
 
-            // Calculate total returned quantity including this return
             const alreadyReturnedQuantity = rental.returnedProducts
                 .filter(rp => rp.product.toString() === product)
                 .reduce((sum, rp) => sum + rp.quantity, 0);
 
-            // Check if return quantity exceeds remaining quantity
             const remainingQuantity = borrowedProduct.quantity - alreadyReturnedQuantity;
             if (quantity > remainingQuantity) {
-                throw new Error(`Cannot return more than borrowed quantity for product ${product}. Remaining: ${remainingQuantity}, Attempted: ${quantity}`);
+                throw new Error(`Қайтарилаётган миқдор ижарадаги миқдордан кўп. Қолган: ${remainingQuantity}, Қайтарилмоқчи: ${quantity}`);
             }
         }
 
@@ -440,13 +437,30 @@ exports.returnProduct = async (req, res) => {
         await rental.save();
 
         res.status(200).json({
-            message: 'Products returned successfully',
-            rental,
+            message: 'Маҳсулотлар муваффақиятли қайтарилди',
+            rental: await rental.populate([
+                'customer',
+                'car',
+                {
+                    path: 'borrowedProducts.product',
+                    populate: {
+                        path: 'parts.product',
+                        model: 'Product'
+                    }
+                },
+                {
+                    path: 'returnedProducts.product',
+                    populate: {
+                        path: 'parts.product',
+                        model: 'Product'
+                    }
+                }
+            ]),
             totalReturnAmount
         });
     } catch (error) {
-        console.error('Return process error:', error);
-        res.status(500).json({ message: error.message || 'Error during return process' });
+        console.error('Қайтариш жараёнида хатолик:', error);
+        res.status(500).json({ message: error.message || 'Қайтариш жараёнида хатолик юз берди' });
     }
 };
 
