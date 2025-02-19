@@ -72,65 +72,36 @@ exports.getProductById = async (req, res) => {
 // Update a product by ID
 exports.updateProduct = async (req, res) => {
   try {
-    // Kiritilgan ma'lumotlarni tekshirish
-    if (!req.body || Object.keys(req.body).length === 0) {
+    const productId = req.params.id || req.body._id;
+    
+    if (!productId) {
       return res.status(400).json({
         success: false,
-        message: 'Yangilash uchun ma\'lumotlar kiritilmagan'
+        message: 'Маҳсулот ID си кўрсатилмаган'
       });
     }
 
-    const product = await Product.findById(req.params.id);
+    const product = await Product.findById(productId);
     if (!product) {
       return res.status(404).json({
         success: false,
-        message: 'Mahsulot topilmadi'
+        message: 'Маҳсулот топилмади'
       });
     }
 
-    // Ruxsat etilgan maydonlarni belgilash
-    const allowedUpdates = ['name', 'description', 'dailyRate', 'type', 'parts', 'status', 'quantity', 'category', 'isAvailable', 'availability'];
-    const updates = Object.keys(req.body);
-    const isValidOperation = updates.every(update => allowedUpdates.includes(update));
-
-    if (!isValidOperation) {
-      return res.status(400).json({
-        success: false,
-        message: 'Noto\'g\'ri yangilash maydonlari'
-      });
-    }
-
-    
-
-    // Combo mahsulot uchun parts ni tekshirish
-    if (req.body.type === 'combo' && Array.isArray(req.body.parts)) {
-      let totalPrice = 0;
-      for (const part of req.body.parts) {
-        const partProduct = await Product.findById(part.product);
-        if (!partProduct) {
-          return res.status(400).json({
-            success: false,
-            message: 'Qism mahsulot topilmadi'
-          });
-        }
-        const quantity = Number(part.quantity) || 0;
-        const partPrice = Number(partProduct.dailyRate) || 0;
-        totalPrice += partPrice * quantity;
-      }
-    }
-
-    // Mahsulotni yangilash
+    // Validate and update product fields
     Object.assign(product, req.body);
     await product.save();
     
     res.status(200).json({
       success: true,
-      message: 'Mahsulot muvaffaqiyatli yangilandi',
+      message: 'Маҳсулот муваффақиятли янгиланди',
       data: product
     });
+
   } catch (error) {
     res.status(400).json({
-      success: false,
+      success: false, 
       message: error.message
     });
   }
