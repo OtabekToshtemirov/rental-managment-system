@@ -154,15 +154,8 @@ const getYearlyRevenue = async (req, res) => {
 // Get top 5 customers by payment
 const getTopCustomers = async (req, res) => {
     try {
-        const startDate = moment().startOf('month');
-        const endDate = moment().endOf('month');
-
+        // Vaqt chegaralarini o'chiramiz - barcha vaqtlar uchun qidiramiz
         const topCustomers = await Payment.aggregate([
-            {
-                $match: {
-                    createdAt: { $gte: startDate.toDate(), $lte: endDate.toDate() }
-                }
-            },
             {
                 $group: {
                     _id: "$customer",

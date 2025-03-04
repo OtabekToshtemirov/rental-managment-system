@@ -221,8 +221,10 @@ exports.getAllRentals = async (req, res) => {
         const rentalsWithDetails = rentals.map((rental) => {
             const rentalObj = rental.toObject();
             const startDate = new Date(rental.workStartDate);
+            startDate.setHours(0, 0, 0, 0); // Kun boshlanishiga o'rnatish
             const now = new Date();
-            const days = Math.ceil((now - startDate) / (1000 * 60 * 60 * 24));
+            now.setHours(0, 0, 0, 0); // Kun boshlanishiga o'rnatish
+            const days = Math.max(1, Math.ceil((now - startDate) / (1000 * 60 * 60 * 24)));
             
             // Get payments for this rental
             const rentalPayments = allPayments.filter(payment => 
@@ -285,8 +287,10 @@ exports.getRentalsByCustomerId = async (req, res) => {
         const rentalsWithDetails = rentals.map(rental => {
             const rentalObj = rental.toObject();
             const startDate = new Date(rental.workStartDate);
+            startDate.setHours(0, 0, 0, 0); // Kun boshlanishiga o'rnatish
             const now = new Date();
-            const days = Math.ceil((now - startDate) / (1000 * 60 * 60 * 24));
+            now.setHours(0, 0, 0, 0); // Kun boshlanishiga o'rnatish
+            const days = Math.max(1, Math.ceil((now - startDate) / (1000 * 60 * 60 * 24)));
             
             // Calculate total payments
             const totalPayments = rental.payments.reduce((sum, payment) => sum + payment.amount, 0);
